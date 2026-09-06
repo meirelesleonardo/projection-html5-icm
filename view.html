@@ -512,10 +512,28 @@
             transport.pin = info.pin || '';
             transport.on('open', function () { setDot(true); });
             transport.on('close', function () { setDot(false); });
-            transport.on('message', function (msg) { handleMessage(msg); });
+            transport.on('message', function (msg) {
+              if (msg && msg.function === 'reloadReveal' && msg.data) {
+                transport._hadContent = true;
+              }
+              if (msg && msg.function === 'stateSnapshot' && msg.data && msg.data.slidesHtml) {
+                transport._hadContent = true;
+              }
+              if (msg && msg.function === 'hidePairing') {
+                transport._hadContent = true;
+              }
+              handleMessage(msg);
+            });
             transport.connect();
             refreshPairing();
-            setPairingVisible(true);
+            // Não forçar QR — o servidor manda stateSnapshot / showPairing|hidePairing.
+            // Se a sala estiver vazia após ~1,2s, mostra o QR.
+            setTimeout(function () {
+              var hasSlides = !!document.querySelector('.slides section');
+              if (!hasSlides && !transport._hadContent) {
+                setPairingVisible(true);
+              }
+            }, 1200);
           })
           .catch(function () {
             setDot(false);

@@ -89,7 +89,8 @@ class Room {
       const hasController = [...this.clients.values()].some(
         (c) => c.role === 'controller' || c.role === 'admin'
       );
-      this.state.pairingVisible = !hasController;
+      const hasContent = !!(this.state.slidesHtml && String(this.state.slidesHtml).trim());
+      this.state.pairingVisible = !hasController && !hasContent;
     }
 
     return client;

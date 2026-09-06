@@ -458,6 +458,9 @@ function generateLiveList(){
   var f = 1;
   $.each(projecao, function(i, item) { 
     if(item.type == "s"){
+      if (!dados[item.folderId] || !dados[item.folderId].songs || !dados[item.folderId].songs[item.id]) {
+        return;
+      }
       var lang = "-"+dados[item.folderId].lang;
       if(lang == '-pt'){
         lang = "";
@@ -547,45 +550,58 @@ function generateLiveList(){
   updateViewSlides();
 }
 
-function updateViewSlides(){
-  var payload = {
-          host: 'projection-html5',
-          function: 'reloadReveal',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: viewSlides
-        };
-  if (typeof(windowView)!='undefined' && !windowView.closed) {
-    windowView.postMessage(JSON.stringify(payload), "*");
-  }
-  iframeView.postMessage(JSON.stringify(payload), "*");
-  if (window.projectionNet && window.projectionNet.send) {
-    window.projectionNet.send('reloadReveal', viewSlides);
-  }
-}
-
 function mudaProjecaoAtiva(){
   $('#livesongs > tbody > tr.active').removeClass( 'active' );
-  $('#livesongs > tbody > tr[data-id="'+projecaoAtiva+'"]').addClass( 'active' );
-  $('#scrollblock').scrollTop(
-      $('#livesongs > tbody > tr[data-id="'+projecaoAtiva+'"]').offset().top - $('#scrollblock').offset().top + $('#scrollblock').scrollTop()
-  );   
+  var $row = $('#livesongs > tbody > tr[data-id="'+projecaoAtiva+'"]');
+  $row.addClass( 'active' );
+  try {
+    if ($row.length && $row.offset() && $('#scrollblock').offset()) {
+      $('#scrollblock').scrollTop(
+          $row.offset().top - $('#scrollblock').offset().top + $('#scrollblock').scrollTop()
+      );
+    }
+  } catch (e) {}
   mudaSlide();
 }
 
+function postToProjectionViews(fn, data) {
+  var payload = JSON.stringify({
+    host: 'projection-html5',
+    function: fn,
+    url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
+    data: data
+  });
+  try {
+    if (typeof windowView !== 'undefined' && windowView && !windowView.closed) {
+      windowView.postMessage(payload, '*');
+    }
+  } catch (e) {}
+  try {
+    var iframe = document.getElementById('iframeProjection');
+    if (iframe && iframe.contentWindow) {
+      iframe.contentWindow.postMessage(payload, '*');
+    } else if (iframeView) {
+      iframeView.postMessage(payload, '*');
+    }
+  } catch (e) {}
+}
+
+function sendProjectionNet(fn, data) {
+  var t = window.projectionNet;
+  if (!t || typeof t.send !== 'function') return false;
+  // Painel desktop assume o comando ao projetar (mesma ideia do mobile)
+  if (typeof t.takeControl === 'function') t.takeControl();
+  return t.send(fn, data);
+}
+
+function updateViewSlides(){
+  postToProjectionViews('reloadReveal', viewSlides);
+  sendProjectionNet('reloadReveal', viewSlides);
+}
+
 function mudaSlide(){
-  var payload = {
-          host: 'projection-html5',
-          function: 'changeSlide',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: projecaoAtiva
-        };
-  if (typeof(windowView)!='undefined' && !windowView.closed) {
-    windowView.postMessage(JSON.stringify(payload), "*");    
-  }
-  iframeView.postMessage(JSON.stringify(payload), "*");
-  if (window.projectionNet && window.projectionNet.send) {
-    window.projectionNet.send('changeSlide', projecaoAtiva);
-  }
+  postToProjectionViews('changeSlide', projecaoAtiva);
+  sendProjectionNet('changeSlide', projecaoAtiva);
 }
 
 $(document).on('keydown', function(e) {
@@ -665,11 +681,45 @@ $(window).keypress(function(event) {
     // }    
 });
 
-// Inicia a projeção
-function startProjection() {      
-  if (typeof(windowView) =='undefined' || windowView.closed || typeof(windowView) == null) {
-    windowView = window.open("view.html", "_blank", "directories=no,titlebar=no,toolbar=no,location=no,status=no,menubar=no,scrollbars=no,channelmode=yes, fullscreen=yes");
-  }  
+// Inicia a projeção (nova janela / foco). Não chamar no boot — pop-up é bloqueado sem clique do usuário.
+function startProjection() {
+  try {
+    if (windowView && !windowView.closed) {
+      try {
+        windowView.focus();
+      } catch (e) {}
+      updateViewSlides();
+      mudaSlide();
+      return windowView;
+    }
+  } catch (e) {
+    windowView = undefined;
+  }
+
+  windowView = window.open('view.html', 'projectionView');
+  if (!windowView) {
+    alert(
+      'O navegador bloqueou a janela de projeção.\n' +
+        'Permita pop-ups para este site ou abra manualmente:\n' +
+        location.origin +
+        '/view.html'
+    );
+    return null;
+  }
+
+  // A view avisa "opened"; reforça slides após o WebSocket conectar
+  setTimeout(function () {
+    if (window.projectionNet && window.projectionNet.takeControl) {
+      window.projectionNet.takeControl();
+    }
+    updateViewSlides();
+    mudaSlide();
+  }, 600);
+  setTimeout(function () {
+    updateViewSlides();
+    mudaSlide();
+  }, 1500);
+  return windowView;
 }
 $('#startProjection').click(function(){
   startProjection();
@@ -833,7 +883,8 @@ $(function () {
   $('#songList').bind('refresh.jstree', function(e, data) {
         $('#songList').jstree(true).deselect_all();        
         $('#songList').jstree(true).select_node(ref_selected);
-        $("#songList #"+ref_selected)[0].scrollIntoView();
+        var nodeEl = $("#songList #"+ref_selected)[0];
+        if (nodeEl && nodeEl.scrollIntoView) nodeEl.scrollIntoView();
   })
 
   $("#btnAbout").click(function(){
@@ -843,6 +894,8 @@ $(function () {
     $('#modalNotImplemented').modal('toggle');
   });
 
+  // Boot depois do jstree — evita corrida com DOMContentLoaded que quebrava a lista/projeção
+  bootPainel();
 });
 
 function defaultConfigurations(){
@@ -928,19 +981,8 @@ $('#confirmConf').click(function (){
 function changeTheme(){
   configuracoes.themes.forEach(function (theme){
     if (theme.id == configuracoes.active_theme) {
-      var payload = {
-              host: 'projection-html5',
-              function: 'changeTheme',
-              url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-              data: theme.file
-            };
-      if (typeof(windowView)!='undefined' && !windowView.closed) {
-        windowView.postMessage(JSON.stringify(payload), "*");    
-      }
-        iframeView.postMessage(JSON.stringify(payload), "*");
-      if (window.projectionNet && window.projectionNet.send) {
-        window.projectionNet.send('changeTheme', theme.file);
-      }
+      postToProjectionViews('changeTheme', theme.file);
+      sendProjectionNet('changeTheme', theme.file);
       generateLiveList();      
     }
   });  
@@ -963,19 +1005,8 @@ function changeThemeImages(){
 }
 
 function changeFontSize(){
-  var payload = {
-          host: 'projection-html5',
-          function: 'changeFontSize',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: configuracoes.fontSize
-        };
-  if (typeof(windowView)!='undefined' && !windowView.closed) {
-    windowView.postMessage(JSON.stringify(payload), "*");    
-  }
-    iframeView.postMessage(JSON.stringify(payload), "*");
-  if (window.projectionNet && window.projectionNet.send) {
-    window.projectionNet.send('changeFontSize', configuracoes.fontSize);
-  }
+  postToProjectionViews('changeFontSize', configuracoes.fontSize);
+  sendProjectionNet('changeFontSize', configuracoes.fontSize);
 }
 
 $('#fontSizeRange').on('input change', function () {
@@ -1145,7 +1176,6 @@ function bootPainel() {
   try {
     defaultConfigurations();
     carregaLouvores();
-    startProjection();
     reloadProjectionList();
   } catch (err) {
     console.error("[painel] falha no boot", err);
@@ -1154,19 +1184,8 @@ function bootPainel() {
   }
 }
 
-// Não usar window.onload: ele espera o iframe (view.html) e recursos pesados,
-// o que deixa "Carregando" infinito se algo no iframe atrasar.
-(function schedulePainelBoot() {
-  function go() {
-    setTimeout(bootPainel, 50);
-  }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", go);
-  } else {
-    go();
-  }
-  setTimeout(hideLoadingOverlay, 8000);
-})();
+// Segurança: nunca deixar o overlay eterno (ex.: erro cedo no boot)
+setTimeout(hideLoadingOverlay, 8000);
 
 (function(){
     window.addEventListener( 'message', function( event ) { 
@@ -1187,6 +1206,25 @@ function bootPainel() {
 (function initProjectionNet() {
   if (typeof ProjectionTransport === 'undefined') return;
   if (location.protocol.indexOf('http') !== 0) return;
+
+  function updateDesktopControlStatus() {
+    var el = document.getElementById('desktopControlStatus');
+    if (!el) return;
+    var t = window.projectionNet;
+    if (!t || !t.connected) {
+      el.textContent = 'Desconectado';
+      el.style.color = '#f66';
+      return;
+    }
+    if (t.youControl) {
+      el.textContent = 'No comando';
+      el.style.color = '#8f8';
+    } else {
+      el.textContent = 'Sem comando';
+      el.style.color = '#fc6';
+    }
+  }
+
   fetch('/api/pairing')
     .then(function (r) { return r.json(); })
     .then(function (info) {
@@ -1197,11 +1235,45 @@ function bootPainel() {
       });
       t.on('open', function () {
         console.log('[projectionNet] connected as admin');
+        updateDesktopControlStatus();
+      });
+      t.on('close', function () {
+        updateDesktopControlStatus();
+      });
+      t.on('welcome', function (data) {
+        if (data && !data.youControl) t.takeControl();
+        updateDesktopControlStatus();
+      });
+      t.on('controlChanged', function (data) {
+        if (data && t.clientId && data.controllerId === t.clientId) {
+          t.youControl = true;
+        }
+        updateDesktopControlStatus();
+      });
+      t.on('error', function (data) {
+        if (data && data.code === 'no_control') t.takeControl();
+        updateDesktopControlStatus();
       });
       t.connect();
       window.projectionNet = t;
+      updateDesktopControlStatus();
+
+      var btn = document.getElementById('btnTakeControlDesktop');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          if (!window.projectionNet) return;
+          window.projectionNet.takeControl();
+          setTimeout(function () {
+            updateViewSlides();
+            mudaSlide();
+            updateDesktopControlStatus();
+          }, 200);
+        });
+      }
     })
-    .catch(function () {});
+    .catch(function () {
+      updateDesktopControlStatus();
+    });
 })();
 
 try {
