@@ -1,0 +1,19 @@
+# Exemplo de unit systemd — copie para /etc/systemd/system/projection-icm.service
+# e ajuste User/WorkingDirectory. Ver docs/install-zorin.md
+
+[Unit]
+Description=Projecao ICM LAN server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=CHANGE_ME
+WorkingDirectory=/home/CHANGE_ME/projection-html5-icm
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

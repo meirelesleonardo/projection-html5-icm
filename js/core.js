@@ -534,20 +534,19 @@ function generateLiveList(){
 }
 
 function updateViewSlides(){
+  var payload = {
+          host: 'projection-html5',
+          function: 'reloadReveal',
+          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
+          data: viewSlides
+        };
   if (typeof(windowView)!='undefined' && !windowView.closed) {
-    windowView.postMessage(JSON.stringify( {
-          host: 'projection-html5',
-          function: 'reloadReveal',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: viewSlides
-        } ), "*");
+    windowView.postMessage(JSON.stringify(payload), "*");
   }
-  iframeView.postMessage(JSON.stringify( {
-          host: 'projection-html5',
-          function: 'reloadReveal',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: viewSlides
-        } ), "*");
+  iframeView.postMessage(JSON.stringify(payload), "*");
+  if (window.projectionNet && window.projectionNet.send) {
+    window.projectionNet.send('reloadReveal', viewSlides);
+  }
 }
 
 function mudaProjecaoAtiva(){
@@ -560,20 +559,19 @@ function mudaProjecaoAtiva(){
 }
 
 function mudaSlide(){
+  var payload = {
+          host: 'projection-html5',
+          function: 'changeSlide',
+          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
+          data: projecaoAtiva
+        };
   if (typeof(windowView)!='undefined' && !windowView.closed) {
-    windowView.postMessage(JSON.stringify( {
-          host: 'projection-html5',
-          function: 'changeSlide',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: projecaoAtiva
-        } ), "*");    
+    windowView.postMessage(JSON.stringify(payload), "*");    
   }
-    iframeView.postMessage(JSON.stringify( {
-          host: 'projection-html5',
-          function: 'changeSlide',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: projecaoAtiva
-        } ), "*");    
+  iframeView.postMessage(JSON.stringify(payload), "*");
+  if (window.projectionNet && window.projectionNet.send) {
+    window.projectionNet.send('changeSlide', projecaoAtiva);
+  }
 }
 
 $(document).on('keydown', function(e) {
@@ -916,20 +914,19 @@ $('#confirmConf').click(function (){
 function changeTheme(){
   configuracoes.themes.forEach(function (theme){
     if (theme.id == configuracoes.active_theme) {
+      var payload = {
+              host: 'projection-html5',
+              function: 'changeTheme',
+              url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
+              data: theme.file
+            };
       if (typeof(windowView)!='undefined' && !windowView.closed) {
-        windowView.postMessage(JSON.stringify( {
-              host: 'projection-html5',
-              function: 'changeTheme',
-              url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-              data: theme.file
-            } ), "*");    
+        windowView.postMessage(JSON.stringify(payload), "*");    
       }
-        iframeView.postMessage(JSON.stringify( {
-              host: 'projection-html5',
-              function: 'changeTheme',
-              url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-              data: theme.file
-            } ), "*");      
+        iframeView.postMessage(JSON.stringify(payload), "*");
+      if (window.projectionNet && window.projectionNet.send) {
+        window.projectionNet.send('changeTheme', theme.file);
+      }
       generateLiveList();      
     }
   });  
@@ -952,20 +949,19 @@ function changeThemeImages(){
 }
 
 function changeFontSize(){
+  var payload = {
+          host: 'projection-html5',
+          function: 'changeFontSize',
+          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
+          data: configuracoes.fontSize
+        };
   if (typeof(windowView)!='undefined' && !windowView.closed) {
-    windowView.postMessage(JSON.stringify( {
-          host: 'projection-html5',
-          function: 'changeFontSize',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: configuracoes.fontSize
-        } ), "*");    
+    windowView.postMessage(JSON.stringify(payload), "*");    
   }
-    iframeView.postMessage(JSON.stringify( {
-          host: 'projection-html5',
-          function: 'changeFontSize',
-          url: window.location.protocol + '//' + window.location.host + window.location.pathname + window.location.search,
-          data: configuracoes.fontSize
-        } ), "*"); 
+    iframeView.postMessage(JSON.stringify(payload), "*");
+  if (window.projectionNet && window.projectionNet.send) {
+    window.projectionNet.send('changeFontSize', configuracoes.fontSize);
+  }
 }
 
 $('#fontSizeRange').on('input change', function () {
@@ -1148,5 +1144,26 @@ window.onload = function() {
       changeTheme();
     }
 })()
+
+/** LAN mode: when served over HTTP, also drive remote view via WebSocket */
+(function initProjectionNet() {
+  if (typeof ProjectionTransport === 'undefined') return;
+  if (location.protocol.indexOf('http') !== 0) return;
+  fetch('/api/pairing')
+    .then(function (r) { return r.json(); })
+    .then(function (info) {
+      var t = new ProjectionTransport({
+        role: 'admin',
+        name: 'desktop-admin',
+        pin: info.pin || '',
+      });
+      t.on('open', function () {
+        console.log('[projectionNet] connected as admin');
+      });
+      t.connect();
+      window.projectionNet = t;
+    })
+    .catch(function () {});
+})();
 
 var ps = new PerfectScrollbar('#scrollblock');

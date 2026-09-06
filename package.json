@@ -1,0 +1,20 @@
+{
+  "name": "projection-html5-icm",
+  "version": "2.0.0",
+  "description": "Projeção ICM — relay LAN (hotspot) + painel mobile",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "qrcode": "^1.5.4",
+    "uuid": "^11.0.5",
+    "ws": "^8.18.0"
+  }
+}

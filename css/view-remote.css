@@ -1,0 +1,87 @@
+/* Pairing overlay + remote view helpers */
+#pairingOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: radial-gradient(ellipse at center, #1a1020 0%, #0a0a0c 70%);
+  color: #f5f5f5;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2vw;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+#pairingOverlay.visible {
+  display: flex;
+}
+#pairingOverlay h1 {
+  font-size: 3.5vw;
+  margin: 0 0 1vw;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+#pairingOverlay .ip {
+  font-size: 4.5vw;
+  font-weight: 700;
+  color: #e8c547;
+  margin: 1vw 0;
+  font-variant-numeric: tabular-nums;
+}
+#pairingOverlay img.qr {
+  width: min(40vh, 40vw);
+  height: auto;
+  background: #fff;
+  padding: 1vw;
+  border-radius: 1vw;
+}
+#pairingOverlay .hint {
+  font-size: 1.6vw;
+  opacity: 0.85;
+  max-width: 70vw;
+  margin-top: 1.5vw;
+}
+#pairingOverlay .pin {
+  font-size: 2.2vw;
+  margin-top: 1vw;
+}
+#connDot {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #666;
+  z-index: 10001;
+  opacity: 0.7;
+}
+#connDot.on { background: #3c9; }
+#connDot.off { background: #c44; }
+
+#remoteVideoLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: #000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#remoteVideoLayer.active { display: flex; }
+#remoteVideoLayer video {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.reveal.cleared .slides {
+  visibility: hidden;
+}
+
+.reveal[data-display-profile="720p"] {
+  /* hint for CSS; JS also sets Reveal size */
+}

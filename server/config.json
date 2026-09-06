@@ -1,0 +1,10 @@
+{
+  "port": 3080,
+  "mediaDir": "media",
+  "displayProfile": "1080p",
+  "roomPin": "1234",
+  "hostname": "projection-icm.local",
+  "udpDiscoveryPort": 41234,
+  "serviceName": "Projeção ICM",
+  "version": "2.0.0"
+}

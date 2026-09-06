@@ -1,43 +1,58 @@
 # Projeção ICM
 
-Projeção para Igreja Cristã Maranata. Suporta os idiomas português (pt-BR), inglês (en) e italiano (it)
+Projeção para Igreja Cristã Maranata. Idiomas: português (pt-BR), inglês (en) e italiano (it).
 
-Painel                     |  Projeção
-:-------------------------:|:-------------------------:
-![](/docs/assets/img/painel.gif)      |  ![](/docs/assets/img/projecao.gif)
+Painel desktop | Projeção
+:-------------:|:--------:
+![](/docs/assets/img/painel.gif) | ![](/docs/assets/img/projecao.gif)
 
-Características
----------------
+## Modos de uso
 
-* Edição fácil de louvores (Uma linha vazia faz a separação dos slides)
-* Criar pastas para organizar letras (em um idioma específico)
-* Crie de forma rápida sua lista de projeção (apenas com um duplo-clique no louvor)
-* Projeta avisos
-* Projeta imagens
-* Suporte a bíblias (ACF e NVI)
-* Suporte a múltiplos idiomas
+### A) Desktop clássico (mesmo PC)
 
-Tecnologias Utilizadas
-----------------------
+1. Abra `index.html` no Firefox (recomendado).
+2. Permita pop-ups para abrir `view.html`.
+3. No Chrome/Opera, importe `data/data.json` manualmente se necessário.
 
-1. Bootstrap
-2. Jstree
-3. Reveal.js
-4. jQuery
-5. FontAwesome
+### B) LAN / hotspot (celular controla o mini PC Zorin)
 
-Roda nos navegadores
---------------------
+O mini PC roda o servidor Node; o projetor mostra `view.html`; o Android usa `mobile.html`.
 
-* Mozilla Firefox (funciona 100%)
-* Google Chrome ( funciona com limitação: "necessário importar manualmente data.json" )
-* Opera ( funciona com limitação: "necessário importar manualmente data.json" )
+```bash
+npm install
+npm start
+# View (projetor):  http://127.0.0.1:3080/view.html
+# Mobile:           http://<ip-do-pc>:3080/mobile.html
+```
 
-Uso
----
+Sem IP fixo: o projetor exibe **QR + IP** para pareamento no hotspot.
 
-1. Execute **index.html**
-2. **Permitir pop-up** (aviso no canto superior direto do navegador)
-3. Feche o navegador e execute novamente **index.html**
+PIN padrão: `1234` (altere em `server/config.json`).
 
-obs: Se você não estiver usando o **Mozilla Firefox**, precisará abrir manualmente os dados / data.json
+## Documentação
+
+| Doc | Conteúdo |
+|-----|----------|
+| [docs/architecture.md](docs/architecture.md) | Arquitetura LAN / WebSocket |
+| [docs/specs/](docs/specs/README.md) | SPECs 01–09 |
+| [docs/install-zorin.md](docs/install-zorin.md) | Instalação no Zorin (hotspot, systemd, kiosk) |
+| [docs/manual-mobile.md](docs/manual-mobile.md) | Uso do painel no celular |
+| [docs/manual-video.md](docs/manual-video.md) | Vídeos MP4 na playlist |
+| [docs/app-android-pwa.md](docs/app-android-pwa.md) | PWA e Capacitor |
+| [docs/manual.md](docs/manual.md) | Manual do painel desktop |
+
+## Características
+
+* Edição de louvores (linha vazia separa slides)
+* Pastas por idioma, avisos, imagens, bíblias (ACF/NVI)
+* **Painel mobile** com multi-controle e pareamento QR
+* **Vídeos** locais (`media/videos`) e stream WebRTC do celular
+* Biblioteca compartilhada via servidor (`/api/library`)
+
+## Stack
+
+Bootstrap, jsTree, Reveal.js, jQuery, FontAwesome, **Node (Express + ws)**
+
+## Config rápida
+
+`server/config.json` — porta, PIN, perfil `720p`/`1080p`, hostname mDNS.

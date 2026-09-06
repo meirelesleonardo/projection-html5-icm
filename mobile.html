@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1419">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Projeção ICM — Mobile</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/mobile.css">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+</head>
+<body>
+  <section id="screen-connect" class="screen active">
+    <h1>Projeção ICM</h1>
+    <p class="status" id="connectStatus">Conecte-se ao hotspot e ao mini PC</p>
+    <div class="card">
+      <label for="hostInput">Endereço do PC</label>
+      <input id="hostInput" placeholder="192.168.43.12:3080 ou projection-icm.local:3080" autocomplete="off">
+      <label for="pinInput">PIN</label>
+      <input id="pinInput" type="password" inputmode="numeric" placeholder="PIN da sala" value="1234">
+      <label for="roleSelect">Função</label>
+      <select id="roleSelect">
+        <option value="controller">Controlar</option>
+        <option value="observer">Só observar</option>
+      </select>
+      <button id="btnConnect">Conectar</button>
+      <button class="secondary" id="btnAuto">Tentar último / .local</button>
+      <button class="secondary" id="btnScanQr">Escanear QR</button>
+      <video id="qrVideo" playsinline></video>
+      <div id="historyBox" class="card" style="margin-top:1rem;padding:0.5rem"></div>
+    </div>
+  </section>
+
+  <section id="screen-app" class="screen">
+    <div class="status" id="appStatus">…</div>
+    <div class="nav-tabs">
+      <button type="button" data-tab="live" class="active">Ao vivo</button>
+      <button type="button" data-tab="playlist">Lista</button>
+      <button type="button" data-tab="library">Louvores</button>
+      <button type="button" data-tab="media">Mídia</button>
+      <button type="button" data-tab="more">Mais</button>
+    </div>
+
+    <div id="tab-live" class="tab-panel">
+      <div class="preview" id="previewBox">Slide atual</div>
+      <div class="big-nav">
+        <button id="btnPrev" type="button">← Anterior</button>
+        <button id="btnNext" type="button">Próximo →</button>
+      </div>
+      <div class="slide-list" id="slideList"></div>
+    </div>
+
+    <div id="tab-playlist" class="tab-panel hidden">
+      <div class="card" id="playlistBox"></div>
+      <button class="secondary" id="btnAddBlank">Adicionar tela padrão</button>
+    </div>
+
+    <div id="tab-library" class="tab-panel hidden">
+      <input id="libSearch" placeholder="Buscar louvor…">
+      <div class="card" id="libraryBox" style="max-height:60vh;overflow:auto;padding:0"></div>
+    </div>
+
+    <div id="tab-media" class="tab-panel hidden">
+      <div class="card">
+        <h2>Vídeos no PC</h2>
+        <div id="videoList"></div>
+        <label for="videoFile">Enviar vídeo do celular</label>
+        <input id="videoFile" type="file" accept="video/*">
+        <button id="btnUploadVideo">Enviar para o PC</button>
+      </div>
+      <div class="card">
+        <h2>Stream ao vivo</h2>
+        <button id="btnStartStream">Transmitir câmera</button>
+        <button class="secondary" id="btnStartFileStream">Transmitir arquivo (WebRTC)</button>
+        <button class="danger" id="btnStopStream">Parar stream</button>
+        <input id="streamFile" type="file" accept="video/*" class="hidden">
+      </div>
+      <div class="toolbar-grid">
+        <button id="btnPlayVid">Play vídeo</button>
+        <button id="btnPauseVid">Pause</button>
+      </div>
+    </div>
+
+    <div id="tab-more" class="tab-panel hidden">
+      <div class="toolbar-grid">
+        <button id="btnTakeControl">Assumir comando</button>
+        <button class="secondary" id="btnShowPairing">QR no projetor</button>
+        <button class="danger" id="btnBlack">Tela preta</button>
+        <button class="secondary" id="btnLogo">Logo / padrão</button>
+        <button class="secondary" id="btnFontDown">Fonte −</button>
+        <button class="secondary" id="btnFontUp">Fonte +</button>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <label for="displayProfile">Perfil do projetor</label>
+        <select id="displayProfile">
+          <option value="1080p">1920×1080</option>
+          <option value="720p">1280×720</option>
+        </select>
+        <button class="secondary" id="btnDisconnect">Desconectar</button>
+      </div>
+    </div>
+  </section>
+
+  <script src="js/transport.js"></script>
+  <script src="js/discovery-client.js"></script>
+  <script src="js/mobile.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    }
+  </script>
+</body>
+</html>

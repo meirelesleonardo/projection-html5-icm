@@ -1,0 +1,8 @@
+node_modules/
+media/tmp/*
+!media/tmp/.gitkeep
+media/videos/*
+!media/videos/.gitkeep
+.DS_Store
+*.log
+.env
