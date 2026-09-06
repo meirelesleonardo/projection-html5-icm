@@ -388,7 +388,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (!clientId) return;
-    room.removeClient(clientId);
+    const removed = room.removeClient(clientId);
     room.broadcast(
       envelope('controlChanged', {
         controllerId: room.controllerId,
@@ -399,6 +399,13 @@ wss.on('connection', (ws) => {
       room.broadcast(envelope('showPairing', true));
     } else {
       room.broadcast(envelope('hidePairing', true));
+      // Celular bloqueou/saiu: idle com logo em vez do QR (culto em andamento)
+      if (removed && removed.idleWithoutController) {
+        room.state.logo = true;
+        room.state.cleared = false;
+        room.broadcast(envelope('pauseVideo', {}));
+        room.broadcast(envelope('showLogo', true));
+      }
     }
     console.log(`[ws] close ${clientId}`);
   });

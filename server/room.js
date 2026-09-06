@@ -107,8 +107,16 @@ class Room {
     const hasController = [...this.clients.values()].some(
       (c) => c.role === 'controller' || c.role === 'admin'
     );
-    this.state.pairingVisible = !hasController;
-    return client;
+    const hasContent = !!(this.state.slidesHtml && String(this.state.slidesHtml).trim());
+    // QR só se não há controlador e a sala está “vazia” (sem projeção ativa).
+    // Se o celular cair no meio do culto, mantém a tela (logo/padrão no close).
+    this.state.pairingVisible = !hasController && !hasContent;
+    return {
+      client,
+      hasController,
+      hasContent,
+      idleWithoutController: !hasController && hasContent,
+    };
   }
 
   getClient(id) {

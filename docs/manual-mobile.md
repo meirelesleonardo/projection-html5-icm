@@ -29,6 +29,8 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
   - Contain / Cover / Tela cheia / **Som** / **Mudo** do vídeo projetado.
 - **Mais:** assumir comando, QR no projetor, tela preta, logo, fonte, perfil 720p/1080p, **Tela cheia View** / **Sair tela cheia**, **Limpar sessão**.
 
+Se o celular **bloquear** ou sair do navegador no meio do culto, o projetor **não volta ao QR**: vai para a **tela logo / padrão**. O QR só aparece no início (sala vazia) ou quando você toca **QR no projetor**.
+
 Os módulos no topo mostram **vários de uma vez**; deslize a faixa se não couberem todos (Bíblia, Slides, Mídia, Mais…).
 
 ### Apresentações (PPTX)
