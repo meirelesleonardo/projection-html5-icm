@@ -14,14 +14,20 @@ var telaPadrao = ">\n<h1>"+TRANSLATIONS[config.lang]['maranata_title']+"</h1>\n<
 
 var isFirefox = typeof InstallTrigger !== 'undefined';
 
-function loadJSON(callback) {   
+function loadJSON(callback, onError) {   
   var xobj = new XMLHttpRequest();
   xobj.overrideMimeType("application/json");
   xobj.open('GET', 'data/data.json', true); 
   xobj.onreadystatechange = function () {
-    if (xobj.readyState == 4 && xobj.status == 200) {
+    if (xobj.readyState != 4) return;
+    if (xobj.status == 200) {
       callback(xobj.responseText);
+    } else if (onError) {
+      onError();
     }
+  };
+  xobj.onerror = function () {
+    if (onError) onError();
   };
   xobj.send(null);   
 }
@@ -29,9 +35,12 @@ function loadJSON(callback) {
 function carregaLouvores(){
   // Testa se já possui armazenado no navegador
   if(localStorage.getItem("data") === null){
-    if(isFirefox){
+    // Em HTTP (servidor local), carrega data.json automaticamente em qualquer navegador
+    if(isFirefox || location.protocol.indexOf('http') === 0){
       loadJSON(function(response) {        
         atualizaListaArquivos(response);  
+      }, function () {
+        $('#carregarModal').modal('toggle');
       });    
     } else {
       $('#carregarModal').modal('toggle')
@@ -238,8 +247,9 @@ function reloadProjectionList(){
   $.each(projecao, function(i, item) {     
     if(item.type == "s") $('#projections tbody').append('<tr data-id="'+i+'"><td>'+dados[item.folderId].songs[item.id].title+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');
     if(item.type == "b") {
-      var label = bible[item.b].name+" "+(item.c+1)+":"+(item.from+1);
-      if(item.from < item.to) label += "-" + (item.to+1);
+      var label = (bible && bible[item.b])
+        ? (bible[item.b].name+" "+(item.c+1)+":"+(item.from+1) + (item.from < item.to ? "-" + (item.to+1) : ""))
+        : ("Bíblia " + (item.b + 1) + ":" + (item.c + 1));
       $('#projections tbody').append('<tr data-id="'+i+'"><td>'+label+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');           
     }
     if(item.type == "i") {
@@ -485,6 +495,10 @@ function generateLiveList(){
       viewSlides+="<section"+getBackgroundForSection(1)+telaPadrao;
     }
     if(item.type == "b"){
+      if (!bible || !bible[item.b]) {
+        if (typeof ensureBibleScripts === "function") ensureBibleScripts(function () { reloadProjectionList(); });
+        return;
+      }
       $("#projections tbody tr[data-id='"+i+"'] td:first-child").attr("data-goto", f);
       for (var i = item.from; i <= item.to; i++) {
         var label = bible[item.b].name+" "+(item.c+1)+":"+(i+1);
@@ -1120,15 +1134,39 @@ $('#addNewImage').click(function(){
     $('#imagesToAdd').val('');
 });
 
-window.onload = function() {
-  setTimeout(function afterTwoSeconds() {
+function hideLoadingOverlay() {
+  var el = document.getElementById("loading");
+  if (el) el.style.display = "none";
+}
+
+function bootPainel() {
+  if (window.__painelBooted) return;
+  window.__painelBooted = true;
+  try {
     defaultConfigurations();
     carregaLouvores();
     startProjection();
     reloadProjectionList();
-    document.getElementById("loading").style.display = "none";
-  }, 2000);
-};
+  } catch (err) {
+    console.error("[painel] falha no boot", err);
+  } finally {
+    hideLoadingOverlay();
+  }
+}
+
+// Não usar window.onload: ele espera o iframe (view.html) e recursos pesados,
+// o que deixa "Carregando" infinito se algo no iframe atrasar.
+(function schedulePainelBoot() {
+  function go() {
+    setTimeout(bootPainel, 50);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", go);
+  } else {
+    go();
+  }
+  setTimeout(hideLoadingOverlay, 8000);
+})();
 
 (function(){
     window.addEventListener( 'message', function( event ) { 
@@ -1166,4 +1204,8 @@ window.onload = function() {
     .catch(function () {});
 })();
 
-var ps = new PerfectScrollbar('#scrollblock');
+try {
+  var ps = new PerfectScrollbar('#scrollblock');
+} catch (e) {
+  console.warn('[painel] PerfectScrollbar:', e);
+}
