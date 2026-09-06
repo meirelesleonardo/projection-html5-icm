@@ -17,15 +17,20 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 
 ## Operação
 
-- **Ao vivo:** anterior / próximo, tap no slide, swipe.
-- **Lista:** itens do culto; toque para projetar.
-- **Louvores:** busca na biblioteca do servidor (`data.json`); toque adiciona à lista e projeta.
+- **Ao vivo:** anterior / próximo, tap no slide; **Logo / padrão** interrompe qualquer fluxo (vídeo, louvor, stream) e mostra a tela Maranata. Com vídeo projetado, aparecem pause / ±10s / contain / cover / tela cheia.
+- **Lista:** itens do culto; toque para **transmitir**. Use **↑ / ↓** para reordenar e **Remover** para tirar da lista.
+- **Louvores:** busca na biblioteca (`data.json`); toque **só adiciona à lista** (não transmite). Transmissão é sempre pela Lista.
+- **Bíblia:** escolha versão (ACF/NVI), livro, capítulo e versículos; **Adicionar à lista**. Projete pela Lista.
 - **Mídia:**
   - Enviar vídeo (mantém o **nome original**; se já existir, grava `nome_2.mp4`, `nome_3.mp4`…).
   - **Projetar**, **Renomear**, **Apagar** cada arquivo no PC.
   - **Usar como fundo de letra** / **Limpar fundo de letra**.
   - Contain / Cover / Tela cheia do vídeo projetado.
-- **Mais:** assumir comando, QR no projetor, tela preta, logo, fonte, perfil 720p/1080p, **Tela cheia View** / **Sair tela cheia**.
+- **Mais:** assumir comando, QR no projetor, tela preta, logo, fonte, perfil 720p/1080p, **Tela cheia View** / **Sair tela cheia**, **Limpar sessão**.
+
+### Sessão e puxar para atualizar
+
+O painel evita o “puxar para baixo = F5” com `overscroll-behavior` e grava lista/conexão em `sessionStorage`. Se precisar zerar de propósito, use **Limpar sessão** em Mais (com confirmação).
 
 ### Tela cheia da View
 

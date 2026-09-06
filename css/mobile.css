@@ -20,6 +20,7 @@ html, body {
   color: var(--text);
   min-height: 100%;
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
 }
 
 body {
@@ -77,6 +78,7 @@ button:disabled { opacity: 0.45; }
 
 .nav-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
   margin-bottom: 0.75rem;
   position: sticky;
@@ -84,6 +86,7 @@ button:disabled { opacity: 0.45; }
   background: var(--bg);
   z-index: 5;
   padding: 0.5rem 0;
+  overscroll-behavior-y: contain;
 }
 .nav-tabs button {
   margin-top: 0;
@@ -100,6 +103,36 @@ button:disabled { opacity: 0.45; }
 }
 .list-item.active { background: #2a3a22; border-left: 4px solid var(--accent); }
 .list-item small { color: var(--muted); }
+.list-item-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+.list-item-actions button { margin-top: 0; min-height: 44px; }
+
+.slide-list,
+#libraryBox,
+#biblePreview {
+  overscroll-behavior-y: contain;
+}
+
+.bible-preview {
+  max-height: 28vh;
+  overflow: auto;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: #0c1018;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.live-video-controls h2 {
+  font-size: 1rem;
+  margin-bottom: 0.65rem;
+}
 
 .slide-list { max-height: 45vh; overflow: auto; border-radius: var(--radius); background: var(--surface); }
 .slide-row {

@@ -70,6 +70,7 @@
       var transport = null;
       var pc = null;
       var pairingTimer = null;
+      var currentDisplayProfile = null;
       var videoFit = 'contain';
       var videoFullscreen = false;
 
@@ -130,30 +131,36 @@
         $('.reveal').removeClass('cleared');
         var v = document.querySelector('.reveal .slides video');
         var url = optSrc ? resolveMediaUrl(optSrc) : null;
+        var changedSrc = false;
         if (url && !v) {
           reloadReveal(
             '<section class="video-slide">' +
               '<video class="proj-video" src="' +
               url.replace(/"/g, '&quot;') +
-              '" playsinline webkit-playsinline controls data-autoplay></video></section>',
+              '" playsinline webkit-playsinline controls></video></section>',
             0,
             true
           );
           v = document.querySelector('.reveal .slides video');
+          changedSrc = true;
         } else if (url && v && !sameMediaUrl(v.getAttribute('src') || v.src, url)) {
           v.setAttribute('src', url);
           v.src = url;
+          changedSrc = true;
         }
         if (!v) return;
         applyVideoStyles();
+        v.removeAttribute('data-autoplay');
         v.setAttribute('playsinline', '');
         v.setAttribute('webkit-playsinline', '');
-        v.setAttribute('data-autoplay', '');
-        if (currentTime != null && !isNaN(Number(currentTime))) {
+        var forceTime = currentTime != null && !isNaN(Number(currentTime));
+        if (forceTime) {
           try {
             v.currentTime = Number(currentTime);
           } catch (e) {}
         }
+        // Already playing same source — do not reload (avoids restart loops)
+        if (!changedSrc && !v.paused && !forceTime) return;
         var start = function () {
           var p = v.play();
           if (p && typeof p.catch === 'function') {
@@ -163,13 +170,17 @@
             });
           }
         };
-        if (v.readyState >= 2) start();
-        else {
-          v.addEventListener('loadeddata', start, { once: true });
-          v.addEventListener('canplay', start, { once: true });
+        if (!changedSrc && v.readyState >= 2) {
+          start();
+          return;
+        }
+        v.addEventListener('canplay', start, { once: true });
+        if (changedSrc) {
           try {
             v.load();
           } catch (e) {}
+        } else if (v.readyState >= 2) {
+          start();
         }
       }
 
@@ -267,12 +278,30 @@
         }
       }
 
+      function stopPairingTimer() {
+        if (pairingTimer) {
+          clearInterval(pairingTimer);
+          pairingTimer = null;
+        }
+      }
+
+      function startPairingTimer() {
+        if (pairingTimer) return;
+        pairingTimer = setInterval(refreshPairing, 5000);
+      }
+
       function setPairingVisible(visible) {
         var el = document.getElementById('pairingOverlay');
         el.classList.toggle('visible', !!visible);
+        // Poll QR/IP only while overlay is shown — avoids Reveal.sync every 5s restarting video
+        if (visible) startPairingTimer();
+        else stopPairingTimer();
       }
 
       function applyDisplayProfile(profile) {
+        profile = profile || '1080p';
+        if (profile === currentDisplayProfile) return;
+        currentDisplayProfile = profile;
         var map = { '720p': [1280, 720], '1080p': [1920, 1080] };
         var size = map[profile] || map['1080p'];
         Reveal.configure({ width: size[0], height: size[1] });
@@ -312,7 +341,7 @@
         if (fn === 'showLogo') {
           $('.reveal').removeClass('cleared');
           if (typeof data.data === 'string' && data.data.indexOf('<section') !== -1) {
-            reloadReveal(data.data, 0);
+            reloadReveal(data.data, 0, true);
           } else {
             showDefaultLogo();
           }
@@ -346,8 +375,16 @@
         }
         if (fn === 'seekVideo') {
           var sv = document.querySelector('.slides video');
-          var t = data.data && data.data.currentTime != null ? data.data.currentTime : data.data;
-          if (sv) sv.currentTime = Number(t) || 0;
+          if (sv) {
+            if (data.data && data.data.delta != null) {
+              try {
+                sv.currentTime = Math.max(0, (sv.currentTime || 0) + Number(data.data.delta));
+              } catch (e) {}
+            } else {
+              var t = data.data && data.data.currentTime != null ? data.data.currentTime : data.data;
+              sv.currentTime = Number(t) || 0;
+            }
+          }
         }
         if (fn === 'stateSnapshot') {
           var snap = data.data;
@@ -448,7 +485,6 @@
             transport.connect();
             refreshPairing();
             setPairingVisible(true);
-            pairingTimer = setInterval(refreshPairing, 5000);
           })
           .catch(function () {
             setDot(false);

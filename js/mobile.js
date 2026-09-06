@@ -22,6 +22,9 @@
   var controlWaiters = [];
   var BG_DEFAULT = 'imagens/fundo.jpg';
   var LOGO_SLIDE_HTML = null;
+  var SESSION_KEY = 'proj-icm-mobile';
+  var persistTimer = null;
+  var bibleUiReady = false;
 
   var $ = function (id) {
     return document.getElementById(id);
@@ -46,10 +49,57 @@
     document.querySelectorAll('.nav-tabs button').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-tab') === name);
     });
-    ['live', 'playlist', 'library', 'media', 'more'].forEach(function (t) {
+    ['live', 'playlist', 'library', 'bible', 'media', 'more'].forEach(function (t) {
       var el = $('tab-' + t);
       if (el) el.classList.toggle('hidden', t !== name);
     });
+    if (name === 'bible') initBibleTab();
+  }
+
+  function schedulePersist() {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(persistSession, 250);
+  }
+
+  function persistSession() {
+    try {
+      var payload = {
+        baseUrl: baseUrl,
+        pin: $('pinInput') ? $('pinInput').value : '',
+        role: state.role,
+        playlist: state.playlist,
+        slidesHtml: state.slidesHtml,
+        slideIndex: state.slideIndex,
+        fontSize: state.fontSize,
+        videoFit: state.videoFit,
+        videoFullscreen: state.videoFullscreen,
+        videoBgSrc: videoBgSrc,
+      };
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    } catch (e) {}
+  }
+
+  function loadSession() {
+    try {
+      var raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearSessionLocal() {
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+    } catch (e) {}
+    state.playlist = [];
+    state.slidesHtml = '';
+    state.slideIndex = 0;
+    videoBgSrc = null;
+    renderPlaylist();
+    renderSlides();
+    updateBgStatus();
   }
 
   function escapeHtml(s) {
@@ -125,6 +175,17 @@
     });
   }
 
+  function isVideoProjection() {
+    var html = state.slidesHtml || '';
+    return html.indexOf('data-video-src=') !== -1 || /<video[\s>]/i.test(html);
+  }
+
+  function updateLiveVideoControls() {
+    var box = $('liveVideoControls');
+    if (!box) return;
+    box.classList.toggle('hidden', !isVideoProjection());
+  }
+
   function renderSlides() {
     var slides = parseSlides(state.slidesHtml);
     slideCount = slides.length;
@@ -143,16 +204,18 @@
     $('previewBox').textContent = cur
       ? cur.text || '(slide ' + state.slideIndex + ')'
       : 'Sem slides — adicione da lista ou biblioteca';
+    updateLiveVideoControls();
     updateControlUi();
+    schedulePersist();
   }
 
   function updateControlUi() {
-    var can = state.role !== 'observer';
     [
       'btnPrev',
       'btnNext',
       'btnBlack',
       'btnLogo',
+      'btnLiveLogo',
       'btnFontUp',
       'btnFontDown',
       'btnPlayVid',
@@ -160,6 +223,15 @@
       'btnVideoContain',
       'btnVideoCover',
       'btnVideoFull',
+      'btnLivePlay',
+      'btnLivePause',
+      'btnLiveSeekBack',
+      'btnLiveSeekFwd',
+      'btnLiveContain',
+      'btnLiveCover',
+      'btnLiveFull',
+      'btnLiveExitFull',
+      'btnBibleAdd',
     ].forEach(function (id) {
       var el = $(id);
       if (!el) return;
@@ -209,6 +281,40 @@
       sendCmd('hidePairing', true);
       renderSlides();
       showTab('live');
+      schedulePersist();
+    });
+  }
+
+  function showLogoInterrupt() {
+    ensureControl(function () {
+      stopStream();
+      sendCmd('pauseVideo', {});
+      var html = buildLogoSlide();
+      state.slidesHtml = html;
+      state.slideIndex = 0;
+      sendCmd('showLogo', html);
+      sendCmd('hidePairing', true);
+      renderSlides();
+      showTab('live');
+      schedulePersist();
+    });
+  }
+
+  function seekVideoBy(delta) {
+    ensureControl(function () {
+      sendCmd('seekVideo', { delta: delta });
+    });
+  }
+
+  function playVideoKeep() {
+    ensureControl(function () {
+      sendCmd('playVideo', {});
+    });
+  }
+
+  function pauseVideoCmd() {
+    ensureControl(function () {
+      sendCmd('pauseVideo', {});
     });
   }
 
@@ -304,7 +410,7 @@
       titleHtml +
       '<video src="' +
       escapeAttr(src) +
-      '" playsinline webkit-playsinline data-autoplay ' +
+      '" playsinline webkit-playsinline ' +
       (full ? '' : 'controls ') +
       'class="proj-video" style="object-fit:' +
       escapeAttr(fit) +
@@ -358,42 +464,84 @@
     var box = $('playlistBox');
     box.innerHTML = '';
     if (!state.playlist.length) {
-      box.innerHTML = '<p class="status">Lista vazia — adicione louvores ou vídeos.</p>';
+      box.innerHTML = '<p class="status">Lista vazia — adicione louvores, bíblia ou vídeos.</p>';
+      schedulePersist();
       return;
     }
     state.playlist.forEach(function (item, idx) {
       var div = document.createElement('div');
       div.className = 'list-item';
-      div.innerHTML =
+      var body = document.createElement('div');
+      body.innerHTML =
         '<strong>' +
         escapeHtml(item.title || item.name || item.type || 'Item') +
         '</strong><br><small>' +
         escapeHtml(item.type || 'song') +
         '</small>';
-      div.addEventListener('click', function () {
+      body.addEventListener('click', function () {
         if (item.type === 'video') {
           projectVideo(item.src, item.title);
         } else if (item.html) {
           projectHtml(item.html);
         } else if (item.song) {
           projectHtml(songToHtml(item.song));
-        } else if (item.type === 'logo') {
-          projectHtml(buildLogoSlide());
+        } else if (item.type === 'logo' || item.type === 'bible') {
+          projectHtml(item.html || buildLogoSlide());
         }
       });
+      div.appendChild(body);
+
+      var actions = document.createElement('div');
+      actions.className = 'list-item-actions';
+
+      var up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'secondary';
+      up.textContent = '↑';
+      up.disabled = idx === 0;
+      up.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (idx === 0) return;
+        var tmp = state.playlist[idx - 1];
+        state.playlist[idx - 1] = state.playlist[idx];
+        state.playlist[idx] = tmp;
+        syncPlaylist();
+        renderPlaylist();
+      });
+
+      var down = document.createElement('button');
+      down.type = 'button';
+      down.className = 'secondary';
+      down.textContent = '↓';
+      down.disabled = idx === state.playlist.length - 1;
+      down.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (idx >= state.playlist.length - 1) return;
+        var tmp2 = state.playlist[idx + 1];
+        state.playlist[idx + 1] = state.playlist[idx];
+        state.playlist[idx] = tmp2;
+        syncPlaylist();
+        renderPlaylist();
+      });
+
       var rm = document.createElement('button');
-      rm.className = 'secondary';
+      rm.type = 'button';
+      rm.className = 'danger';
       rm.textContent = 'Remover';
-      rm.style.marginTop = '0.35rem';
       rm.addEventListener('click', function (e) {
         e.stopPropagation();
         state.playlist.splice(idx, 1);
         syncPlaylist();
         renderPlaylist();
       });
-      div.appendChild(rm);
+
+      actions.appendChild(up);
+      actions.appendChild(down);
+      actions.appendChild(rm);
+      div.appendChild(actions);
       box.appendChild(div);
     });
+    schedulePersist();
   }
 
   function syncPlaylist() {
@@ -404,6 +552,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playlist: state.playlist }),
       }).catch(function () {});
+      schedulePersist();
     });
   }
 
@@ -477,7 +626,8 @@
           state.playlist.push(item);
           syncPlaylist();
           renderPlaylist();
-          projectHtml(html);
+          setStatus($('appStatus'), 'Adicionado à lista: ' + (s.name || 'louvor'), 'ok');
+          schedulePersist();
         });
         box.appendChild(div);
       });
@@ -516,6 +666,156 @@
   function clearVideoBg() {
     videoBgSrc = null;
     updateBgStatus();
+    schedulePersist();
+  }
+
+  function fillSelect(el, count, selected) {
+    if (!el) return;
+    el.innerHTML = '';
+    for (var i = 0; i < count; i++) {
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = String(i + 1);
+      if (i === selected) opt.selected = true;
+      el.appendChild(opt);
+    }
+  }
+
+  function bibleVersion() {
+    return ($('bibleVersion') && $('bibleVersion').value) || 'acf';
+  }
+
+  function refreshBiblePreview() {
+    if (!window.MobileBible) return;
+    var v = bibleVersion();
+    var b = Number($('bibleBook').value) || 0;
+    var c = Number($('bibleChapter').value) || 0;
+    var from = Number($('bibleFrom').value) || 0;
+    var to = Number($('bibleTo').value) || 0;
+    if (to < from) {
+      to = from;
+      $('bibleTo').value = String(from);
+    }
+    $('biblePreview').textContent = MobileBible.previewText(v, b, c, from, to, 5);
+  }
+
+  function rebuildBibleVerses() {
+    if (!window.MobileBible) return;
+    var v = bibleVersion();
+    var b = Number($('bibleBook').value) || 0;
+    var c = Number($('bibleChapter').value) || 0;
+    var n = MobileBible.verseCount(v, b, c);
+    var from = Math.min(Number($('bibleFrom').value) || 0, Math.max(0, n - 1));
+    var to = Math.min(Number($('bibleTo').value) || from, Math.max(0, n - 1));
+    fillSelect($('bibleFrom'), n, from);
+    fillSelect($('bibleTo'), n, to);
+    refreshBiblePreview();
+  }
+
+  function rebuildBibleChapters() {
+    if (!window.MobileBible) return;
+    var v = bibleVersion();
+    var b = Number($('bibleBook').value) || 0;
+    var n = MobileBible.chapterCount(v, b);
+    var c = Math.min(Number($('bibleChapter').value) || 0, Math.max(0, n - 1));
+    fillSelect($('bibleChapter'), n, c);
+    rebuildBibleVerses();
+  }
+
+  function rebuildBibleBooks() {
+    if (!window.MobileBible) return;
+    var v = bibleVersion();
+    var sel = $('bibleBook');
+    var prev = Number(sel.value) || 0;
+    sel.innerHTML = '';
+    var n = MobileBible.bookCount(v);
+    for (var i = 0; i < n; i++) {
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = MobileBible.bookName(v, i);
+      sel.appendChild(opt);
+    }
+    sel.value = String(Math.min(prev, Math.max(0, n - 1)));
+    rebuildBibleChapters();
+  }
+
+  function initBibleTab() {
+    if (!window.MobileBible || !baseUrl) return;
+    var status = $('bibleLoadStatus');
+    status.textContent = 'Carregando bíblia…';
+    MobileBible.ensureLoaded(bibleVersion(), baseUrl, function (err) {
+      if (err) {
+        status.textContent = err.message || 'Falha ao carregar';
+        status.className = 'status bad';
+        return;
+      }
+      status.textContent = '';
+      status.className = 'status';
+      if (!bibleUiReady) {
+        bibleUiReady = true;
+        $('bibleVersion').addEventListener('change', function () {
+          status.textContent = 'Carregando…';
+          MobileBible.ensureLoaded(bibleVersion(), baseUrl, function (e2) {
+            if (e2) {
+              status.textContent = e2.message;
+              return;
+            }
+            status.textContent = '';
+            rebuildBibleBooks();
+          });
+        });
+        $('bibleBook').addEventListener('change', rebuildBibleChapters);
+        $('bibleChapter').addEventListener('change', rebuildBibleVerses);
+        $('bibleFrom').addEventListener('change', refreshBiblePreview);
+        $('bibleTo').addEventListener('change', refreshBiblePreview);
+        $('btnBibleAdd').addEventListener('click', function () {
+          addBibleToPlaylist();
+        });
+      }
+      rebuildBibleBooks();
+    });
+  }
+
+  function addBibleToPlaylist() {
+    if (!window.MobileBible) return;
+    var v = bibleVersion();
+    MobileBible.ensureLoaded(v, baseUrl, function (err) {
+      if (err) {
+        alert(err.message || 'Bíblia indisponível');
+        return;
+      }
+      var b = Number($('bibleBook').value) || 0;
+      var c = Number($('bibleChapter').value) || 0;
+      var from = Number($('bibleFrom').value) || 0;
+      var to = Number($('bibleTo').value) || from;
+      if (to < from) to = from;
+      var closing =
+        '<section data-background="' +
+        BG_DEFAULT +
+        '" data-state="show_backlay1">' +
+        '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+        '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>\n';
+      var html = MobileBible.scriptureToHtml({
+        version: v,
+        b: b,
+        c: c,
+        from: from,
+        to: to,
+        bg: BG_DEFAULT,
+        closingHtml: closing,
+      });
+      var title = MobileBible.passageLabel(v, b, c, from, to);
+      state.playlist.push({
+        type: 'bible',
+        title: title,
+        bible: { version: v, b: b, c: c, from: from, to: to },
+        html: html,
+      });
+      syncPlaylist();
+      renderPlaylist();
+      setStatus($('appStatus'), 'Bíblia na lista: ' + title, 'ok');
+      schedulePersist();
+    });
   }
 
   function deleteVideo(name, src) {
@@ -725,10 +1025,22 @@
       updateControlUi();
     });
     transport.on('stateSnapshot', function (snap) {
-      state.slidesHtml = snap.slidesHtml || '';
-      state.slideIndex = snap.slideIndex || 0;
-      state.fontSize = snap.fontSize != null ? snap.fontSize : 2;
-      state.playlist = snap.playlist || [];
+      var localPl = state.playlist && state.playlist.length ? state.playlist.slice() : [];
+      if (snap.slidesHtml) {
+        state.slidesHtml = snap.slidesHtml;
+        state.slideIndex = snap.slideIndex || 0;
+      }
+      state.fontSize = snap.fontSize != null ? snap.fontSize : state.fontSize;
+      if (snap.playlist && snap.playlist.length) {
+        state.playlist = snap.playlist;
+      } else if (localPl.length) {
+        state.playlist = localPl;
+        setTimeout(function () {
+          syncPlaylist();
+        }, 0);
+      } else {
+        state.playlist = [];
+      }
       if (snap.library) state.library = snap.library;
       if (snap.displayProfile) $('displayProfile').value = snap.displayProfile;
       if (snap.video) {
@@ -738,6 +1050,7 @@
       renderSlides();
       renderPlaylist();
       updateControlUi();
+      schedulePersist();
     });
     transport.on('reloadReveal', function (html) {
       state.slidesHtml = html || '';
@@ -998,11 +1311,26 @@
     });
   });
   $('btnLogo').addEventListener('click', function () {
-    projectHtml(buildLogoSlide());
+    showLogoInterrupt();
   });
+  if ($('btnLiveLogo')) {
+    $('btnLiveLogo').addEventListener('click', function () {
+      showLogoInterrupt();
+    });
+  }
   if ($('btnClearBg')) {
     $('btnClearBg').addEventListener('click', function () {
       clearVideoBg();
+    });
+  }
+  if ($('btnClearSession')) {
+    $('btnClearSession').addEventListener('click', function () {
+      if (!confirm('Limpar sessão deste celular (lista, slides e conexão salva)?')) return;
+      stopStream();
+      clearSessionLocal();
+      if (transport) transport.disconnect();
+      showScreen('screen-connect');
+      setStatus($('connectStatus'), 'Sessão limpa', 'ok');
     });
   }
   if ($('btnViewFullscreen')) {
@@ -1023,12 +1351,14 @@
     ensureControl(function () {
       state.fontSize = Math.max(1, Number(state.fontSize) - 0.5);
       sendCmd('changeFontSize', state.fontSize);
+      schedulePersist();
     });
   });
   $('btnFontUp').addEventListener('click', function () {
     ensureControl(function () {
       state.fontSize = Math.min(6, Number(state.fontSize) + 0.5);
       sendCmd('changeFontSize', state.fontSize);
+      schedulePersist();
     });
   });
   $('displayProfile').addEventListener('change', function () {
@@ -1071,16 +1401,40 @@
         alert('Falha no upload');
       });
   });
-  $('btnPlayVid').addEventListener('click', function () {
-    ensureControl(function () {
-      sendCmd('playVideo', {});
+  $('btnPlayVid').addEventListener('click', playVideoKeep);
+  $('btnPauseVid').addEventListener('click', pauseVideoCmd);
+  if ($('btnLivePlay')) $('btnLivePlay').addEventListener('click', playVideoKeep);
+  if ($('btnLivePause')) $('btnLivePause').addEventListener('click', pauseVideoCmd);
+  if ($('btnLiveSeekBack')) {
+    $('btnLiveSeekBack').addEventListener('click', function () {
+      seekVideoBy(-10);
     });
-  });
-  $('btnPauseVid').addEventListener('click', function () {
-    ensureControl(function () {
-      sendCmd('pauseVideo', {});
+  }
+  if ($('btnLiveSeekFwd')) {
+    $('btnLiveSeekFwd').addEventListener('click', function () {
+      seekVideoBy(10);
     });
-  });
+  }
+  if ($('btnLiveContain')) {
+    $('btnLiveContain').addEventListener('click', function () {
+      applyVideoFit('contain', false);
+    });
+  }
+  if ($('btnLiveCover')) {
+    $('btnLiveCover').addEventListener('click', function () {
+      applyVideoFit('cover', false);
+    });
+  }
+  if ($('btnLiveFull')) {
+    $('btnLiveFull').addEventListener('click', function () {
+      applyVideoFit(state.videoFit || 'cover', true);
+    });
+  }
+  if ($('btnLiveExitFull')) {
+    $('btnLiveExitFull').addEventListener('click', function () {
+      applyVideoFit(state.videoFit || 'contain', false);
+    });
+  }
   if ($('btnVideoContain')) {
     $('btnVideoContain').addEventListener('click', function () {
       applyVideoFit('contain', false);
@@ -1118,9 +1472,26 @@
     renderHistory();
     var pin = qs('pin');
     if (pin) $('pinInput').value = pin;
+    var saved = loadSession();
+    if (saved) {
+      if (saved.pin && $('pinInput')) $('pinInput').value = saved.pin;
+      if (saved.role && $('roleSelect')) $('roleSelect').value = saved.role;
+      state.playlist = Array.isArray(saved.playlist) ? saved.playlist : [];
+      state.slidesHtml = saved.slidesHtml || '';
+      state.slideIndex = saved.slideIndex || 0;
+      state.fontSize = saved.fontSize != null ? saved.fontSize : 2;
+      state.videoFit = saved.videoFit || 'contain';
+      state.videoFullscreen = !!saved.videoFullscreen;
+      videoBgSrc = saved.videoBgSrc || null;
+      if (saved.baseUrl) {
+        $('hostInput').value = String(saved.baseUrl).replace(/^https?:\/\//, '');
+      }
+    }
     if (location.protocol.indexOf('http') === 0 && location.hostname && location.hostname !== 'localhost') {
       $('hostInput').value = location.host;
       connectTo(location.origin, $('pinInput').value, $('roleSelect').value);
+    } else if (saved && saved.baseUrl) {
+      connectTo(saved.baseUrl, $('pinInput').value, $('roleSelect').value);
     } else {
       var hist = ProjectionDiscovery.loadHistory();
       if (hist[0]) $('hostInput').value = hist[0].replace(/^https?:\/\//, '');

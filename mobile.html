@@ -38,6 +38,7 @@
       <button type="button" data-tab="live" class="active">Ao vivo</button>
       <button type="button" data-tab="playlist">Lista</button>
       <button type="button" data-tab="library">Louvores</button>
+      <button type="button" data-tab="bible">Bíblia</button>
       <button type="button" data-tab="media">Mídia</button>
       <button type="button" data-tab="more">Mais</button>
     </div>
@@ -48,6 +49,20 @@
         <button id="btnPrev" type="button">← Anterior</button>
         <button id="btnNext" type="button">Próximo →</button>
       </div>
+      <button type="button" id="btnLiveLogo">Logo / padrão</button>
+      <div id="liveVideoControls" class="card live-video-controls hidden">
+        <h2>Vídeo</h2>
+        <div class="toolbar-grid">
+          <button type="button" id="btnLivePlay">Continuar</button>
+          <button type="button" id="btnLivePause">Pausar</button>
+          <button type="button" class="secondary" id="btnLiveSeekBack">−10s</button>
+          <button type="button" class="secondary" id="btnLiveSeekFwd">+10s</button>
+          <button type="button" class="secondary" id="btnLiveContain">Contain</button>
+          <button type="button" class="secondary" id="btnLiveCover">Cover</button>
+          <button type="button" id="btnLiveFull">Tela cheia vídeo</button>
+          <button type="button" class="secondary" id="btnLiveExitFull">Sair tela cheia</button>
+        </div>
+      </div>
       <div class="slide-list" id="slideList"></div>
     </div>
 
@@ -57,8 +72,36 @@
     </div>
 
     <div id="tab-library" class="tab-panel hidden">
+      <p class="status" id="libHint">Toque para adicionar à lista (não transmite).</p>
       <input id="libSearch" placeholder="Buscar louvor…">
       <div class="card" id="libraryBox" style="max-height:60vh;overflow:auto;padding:0"></div>
+    </div>
+
+    <div id="tab-bible" class="tab-panel hidden">
+      <div class="card">
+        <label for="bibleVersion">Versão</label>
+        <select id="bibleVersion">
+          <option value="acf">ACF</option>
+          <option value="nvi">NVI</option>
+        </select>
+        <label for="bibleBook">Livro</label>
+        <select id="bibleBook"></select>
+        <label for="bibleChapter">Capítulo</label>
+        <select id="bibleChapter"></select>
+        <div class="toolbar-grid">
+          <div>
+            <label for="bibleFrom">Do versículo</label>
+            <select id="bibleFrom"></select>
+          </div>
+          <div>
+            <label for="bibleTo">Até</label>
+            <select id="bibleTo"></select>
+          </div>
+        </div>
+        <p class="status" id="bibleLoadStatus"></p>
+        <div id="biblePreview" class="bible-preview"></div>
+        <button type="button" id="btnBibleAdd">Adicionar à lista</button>
+      </div>
     </div>
 
     <div id="tab-media" class="tab-panel hidden">
@@ -97,6 +140,7 @@
         <button class="secondary" id="btnFontUp">Fonte +</button>
         <button id="btnViewFullscreen">Tela cheia View</button>
         <button class="secondary" id="btnViewExitFullscreen">Sair tela cheia</button>
+        <button class="danger" id="btnClearSession">Limpar sessão</button>
       </div>
       <div class="card" style="margin-top:1rem">
         <label for="displayProfile">Perfil do projetor</label>
@@ -111,6 +155,7 @@
 
   <script src="js/transport.js"></script>
   <script src="js/discovery-client.js"></script>
+  <script src="js/mobile-bible.js"></script>
   <script src="js/mobile.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
