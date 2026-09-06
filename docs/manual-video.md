@@ -21,16 +21,23 @@ O servidor expõe como `/media/videos/meu-louvor.mp4`.
 
 ## Pelo celular
 
-Na aba **Mídia** → escolher arquivo → **Enviar para o PC** (grava em `media/videos`).
+Na aba **Mídia** → escolher arquivo → **Enviar para o PC**.
+
+- O arquivo é salvo com o **nome original** (caracteres especiais viram `_`).
+- Se já existir o mesmo nome: `louvor_2.mp4`, `louvor_3.mp4`, etc.
+- **Renomear** / **Apagar** na lista de vídeos.
+- **Usar como fundo de letra** e **Limpar fundo** controlam o vídeo atrás das estrofes.
 
 Uploads temporários de fallback WebRTC vão para `media/tmp/`.
 
-## Na playlist
+## Na playlist / projeção
 
-- Toque no vídeo na lista de mídia para adicionar e projetar.
-- Use **Play vídeo** / **Pause** nos controles.
-- O slide usa `<video>` com `object-fit: contain` para não cortar no projetor.
+- **Projetar** adiciona à lista e exibe no projetor.
+- **Play** / **Pause**, **Contain** / **Cover** / **Tela cheia vídeo**.
+- O slide usa `<video>` com `object-fit` conforme o modo escolhido.
 
-## Letras + vídeo (polimento)
+## Letras + vídeo de fundo
 
-É possível montar HTML de slide com letra sobre fundo; na prática atual, projete o vídeo como item da lista ou combine manualmente no desktop. Evoluções futuras: vídeo de fundo com estrofes sincronizadas.
+1. Em Mídia, toque **Usar como fundo de letra** no clipe desejado.
+2. Projete um louvor na biblioteca — as estrofes usam esse vídeo de fundo.
+3. **Limpar fundo** volta ao fundo estático `imagens/fundo.jpg`.

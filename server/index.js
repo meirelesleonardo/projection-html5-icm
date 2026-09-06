@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 
 const { Room } = require('./room');
 const { buildInfo, pairingUrls, startUdpBeacon, listLanIps } = require('./discovery');
+const { sanitizeFilename, uniqueMediaName, safeVideoPath } = require('./media');
 
 const ROOT = path.join(__dirname, '..');
 const configPath = path.join(__dirname, 'config.json');
@@ -18,6 +19,15 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const mediaDir = path.isAbsolute(config.mediaDir)
   ? config.mediaDir
   : path.join(ROOT, config.mediaDir);
+
+function mediaPublicSrc(folder, filename) {
+  const safe = String(filename)
+    .split('/')
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  return `/media/${folder}/${safe}`;
+}
 
 for (const sub of ['videos', 'tmp', 'images']) {
   fs.mkdirSync(path.join(mediaDir, sub), { recursive: true });
@@ -34,8 +44,9 @@ const storage = multer.diskStorage({
     cb(null, dest);
   },
   filename(req, file, cb) {
-    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, `${Date.now()}_${safe}`);
+    const dest =
+      req.query.to === 'videos' ? path.join(mediaDir, 'videos') : path.join(mediaDir, 'tmp');
+    cb(null, uniqueMediaName(dest, file.originalname));
   },
 });
 const upload = multer({
@@ -82,7 +93,7 @@ app.get('/api/media/list', (req, res) => {
     .filter((f) => /\.(mp4|webm|ogg|mov)$/i.test(f))
     .map((f) => ({
       name: f,
-      src: `/media/videos/${encodeURIComponent(f)}`,
+      src: mediaPublicSrc('videos', f),
     }));
   res.json({ videos: files });
 });
@@ -92,8 +103,78 @@ app.post('/api/media/upload', upload.single('file'), (req, res) => {
   const folder = req.query.to === 'videos' ? 'videos' : 'tmp';
   res.json({
     name: req.file.filename,
-    src: `/media/${folder}/${encodeURIComponent(req.file.filename)}`,
+    src: mediaPublicSrc(folder, req.file.filename),
   });
+});
+
+app.delete('/api/media/videos/:name', (req, res) => {
+  const parsed = safeVideoPath(mediaDir, decodeURIComponent(req.params.name));
+  if (!parsed) return res.status(400).json({ error: 'invalid name' });
+  if (!fs.existsSync(parsed.full)) return res.status(404).json({ error: 'not found' });
+  try {
+    fs.unlinkSync(parsed.full);
+    room.rewritePlaylistSrc(mediaPublicSrc('videos', parsed.base), null);
+    return res.json({ ok: true, name: parsed.base });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/media/rename', (req, res) => {
+  const from = req.body && req.body.from;
+  const toRaw = req.body && req.body.to;
+  const src = safeVideoPath(mediaDir, from);
+  if (!src || !fs.existsSync(src.full)) {
+    return res.status(404).json({ error: 'source not found' });
+  }
+  let toName = sanitizeFilename(toRaw);
+  if (!path.extname(toName) && path.extname(src.base)) {
+    toName += path.extname(src.base);
+  }
+  const dest = safeVideoPath(mediaDir, toName);
+  if (!dest) return res.status(400).json({ error: 'invalid target name' });
+  if (dest.base === src.base) {
+    return res.json({
+      ok: true,
+      name: src.base,
+      src: mediaPublicSrc('videos', src.base),
+    });
+  }
+  if (fs.existsSync(dest.full)) {
+    const suggested = uniqueMediaName(src.videosDir, toName);
+    return res.status(409).json({
+      error: 'target exists',
+      suggested,
+    });
+  }
+  try {
+    fs.renameSync(src.full, dest.full);
+    const oldSrc = mediaPublicSrc('videos', src.base);
+    const newSrc = mediaPublicSrc('videos', dest.base);
+    room.rewritePlaylistSrc(oldSrc, newSrc);
+    // Keep projected slides pointing at the new file
+    if (room.state.slidesHtml && room.state.slidesHtml.indexOf(src.base) !== -1) {
+      room.state.slidesHtml = room.state.slidesHtml.split(oldSrc).join(newSrc);
+      room.broadcast({
+        host: 'projection-html5',
+        function: 'reloadReveal',
+        data: room.state.slidesHtml,
+      });
+      room.broadcast({
+        host: 'projection-html5',
+        function: 'playVideo',
+        data: { src: newSrc, currentTime: 0 },
+      });
+    }
+    room.broadcast({
+      host: 'projection-html5',
+      function: 'playlistUpdate',
+      data: room.state.playlist,
+    });
+    return res.json({ ok: true, name: dest.base, src: newSrc });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/playlist', (req, res) => {
@@ -130,6 +211,7 @@ const CONTROL_FUNCTIONS = new Set([
   'hidePairing',
   'setDisplayProfile',
   'setVideoFit',
+  'setBrowserFullscreen',
   'playlistUpdate',
   'libraryUpdate',
   'playVideo',
@@ -185,10 +267,11 @@ wss.on('connection', (ws) => {
         }),
         null
       );
-      room.broadcast(
-        envelope('showPairing', room.state.pairingVisible),
-        null
-      );
+      if (room.state.pairingVisible) {
+        room.broadcast(envelope('showPairing', true), null);
+      } else {
+        room.broadcast(envelope('hidePairing', true), null);
+      }
       console.log(`[ws] hello ${client.role} ${clientId}`);
       return;
     }
@@ -258,7 +341,11 @@ wss.on('connection', (ws) => {
         pairingVisible: room.state.pairingVisible,
       })
     );
-    room.broadcast(envelope('showPairing', room.state.pairingVisible));
+    if (room.state.pairingVisible) {
+      room.broadcast(envelope('showPairing', true));
+    } else {
+      room.broadcast(envelope('hidePairing', true));
+    }
     console.log(`[ws] close ${clientId}`);
   });
 });

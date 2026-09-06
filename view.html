@@ -22,6 +22,9 @@
     <video id="remoteVideo" autoplay playsinline></video>
   </div>
   <div id="connDot" class="off" title="WebSocket"></div>
+  <button type="button" id="fsPrompt" class="fs-prompt" hidden>
+    Toque aqui para tela cheia (ou pressione F11)
+  </button>
 
   <div class="reveal">
     <header class="winetitle"><div id="titulo"></div><div id="logo" style="background-color:white"><i class="icon-logo_bold"></i></div></header>
@@ -96,6 +99,80 @@
         $('.reveal').css('font-size', size + 'vw');
       }
 
+      function resolveMediaUrl(src) {
+        if (!src) return src;
+        if (/^https?:\/\//i.test(src) || src.indexOf('data:') === 0) return src;
+        if (src.charAt(0) === '/') return window.location.origin + src;
+        try {
+          return new URL(src, window.location.href).href;
+        } catch (e) {
+          return src;
+        }
+      }
+
+      function sameMediaUrl(a, b) {
+        if (!a || !b) return false;
+        try {
+          var ua = resolveMediaUrl(a);
+          var ub = resolveMediaUrl(b);
+          if (ua === ub) return true;
+          // Compare path only (ignore origin / encoding)
+          var pa = decodeURIComponent(new URL(ua).pathname);
+          var pb = decodeURIComponent(new URL(ub).pathname);
+          return pa === pb;
+        } catch (e) {
+          return String(a) === String(b);
+        }
+      }
+
+      function playSlideVideo(optSrc, currentTime) {
+        setPairingVisible(false);
+        $('.reveal').removeClass('cleared');
+        var v = document.querySelector('.reveal .slides video');
+        var url = optSrc ? resolveMediaUrl(optSrc) : null;
+        if (url && !v) {
+          reloadReveal(
+            '<section class="video-slide">' +
+              '<video class="proj-video" src="' +
+              url.replace(/"/g, '&quot;') +
+              '" playsinline webkit-playsinline controls data-autoplay></video></section>',
+            0,
+            true
+          );
+          v = document.querySelector('.reveal .slides video');
+        } else if (url && v && !sameMediaUrl(v.getAttribute('src') || v.src, url)) {
+          v.setAttribute('src', url);
+          v.src = url;
+        }
+        if (!v) return;
+        applyVideoStyles();
+        v.setAttribute('playsinline', '');
+        v.setAttribute('webkit-playsinline', '');
+        v.setAttribute('data-autoplay', '');
+        if (currentTime != null && !isNaN(Number(currentTime))) {
+          try {
+            v.currentTime = Number(currentTime);
+          } catch (e) {}
+        }
+        var start = function () {
+          var p = v.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(function () {
+              v.muted = true;
+              v.play().catch(function () {});
+            });
+          }
+        };
+        if (v.readyState >= 2) start();
+        else {
+          v.addEventListener('loadeddata', start, { once: true });
+          v.addEventListener('canplay', start, { once: true });
+          try {
+            v.load();
+          } catch (e) {}
+        }
+      }
+
       function applyVideoStyles() {
         var root = document.querySelector('.reveal');
         if (root) {
@@ -104,7 +181,8 @@
         }
         document.querySelectorAll('.slides video, .slides .proj-video').forEach(function (v) {
           v.setAttribute('playsinline', '');
-          v.style.objectFit = videoFit;
+          v.setAttribute('webkit-playsinline', '');
+          v.style.objectFit = videoFit || 'contain';
           var section = v.closest('section');
           if (section) {
             section.classList.toggle('video-fullscreen', !!videoFullscreen);
@@ -118,17 +196,20 @@
           } else {
             v.style.maxWidth = '100%';
             v.style.maxHeight = '85vh';
-            v.style.width = '';
-            v.style.height = '';
+            v.style.width = 'auto';
+            v.style.height = 'auto';
+            v.style.display = 'block';
+            v.style.margin = '0 auto';
           }
         });
       }
 
-      function reloadReveal(htmlslides, slideIndex) {
+      function reloadReveal(htmlslides, slideIndex, skipAutoplay) {
         hideStream();
         $('.reveal').removeClass('cleared');
         setPairingVisible(false);
         $('.slides').html(htmlslides || '');
+        // Reveal.initialize() only runs once — sync refreshes slides/backgrounds
         try {
           Reveal.sync();
         } catch (e) {
@@ -136,10 +217,54 @@
         }
         changeSlide(slideIndex != null ? slideIndex : 0);
         applyVideoStyles();
+        if (!skipAutoplay && document.querySelector('.reveal .slides video')) {
+          setTimeout(function () {
+            playSlideVideo(null, null);
+          }, 150);
+        }
       }
 
       function showDefaultLogo() {
-        reloadReveal(DEFAULT_LOGO_HTML, 0);
+        reloadReveal(DEFAULT_LOGO_HTML, 0, true);
+      }
+
+      function setFsPrompt(show) {
+        var el = document.getElementById('fsPrompt');
+        if (!el) return;
+        if (show) el.removeAttribute('hidden');
+        else el.setAttribute('hidden', '');
+      }
+
+      function enterBrowserFullscreen() {
+        var el = document.documentElement;
+        var req =
+          el.requestFullscreen ||
+          el.webkitRequestFullscreen ||
+          el.msRequestFullscreen;
+        if (!req) {
+          setFsPrompt(true);
+          return;
+        }
+        Promise.resolve(req.call(el))
+          .then(function () {
+            setFsPrompt(false);
+          })
+          .catch(function () {
+            setFsPrompt(true);
+          });
+      }
+
+      function exitBrowserFullscreen() {
+        setFsPrompt(false);
+        var doc = document;
+        if (!doc.fullscreenElement && !doc.webkitFullscreenElement) return;
+        var exit =
+          doc.exitFullscreen ||
+          doc.webkitExitFullscreen ||
+          doc.msExitFullscreen;
+        if (exit) {
+          Promise.resolve(exit.call(doc)).catch(function () {});
+        }
       }
 
       function setPairingVisible(visible) {
@@ -192,7 +317,7 @@
             showDefaultLogo();
           }
         }
-        if (fn === 'showPairing') setPairingVisible(true);
+        if (fn === 'showPairing') setPairingVisible(!!data.data);
         if (fn === 'hidePairing') setPairingVisible(false);
         if (fn === 'setDisplayProfile') applyDisplayProfile(data.data);
         if (fn === 'setVideoFit') {
@@ -202,26 +327,18 @@
           }
           applyVideoStyles();
         }
+        if (fn === 'setBrowserFullscreen') {
+          var on =
+            data.data === true ||
+            (data.data && (data.data.on === true || data.data.on === 'true'));
+          if (on) enterBrowserFullscreen();
+          else exitBrowserFullscreen();
+        }
         if (fn === 'playVideo') {
-          var v = document.querySelector('.slides video');
-          if (data.data && data.data.src) {
-            if (!v) {
-              reloadReveal(
-                '<section class="video-slide"><video class="proj-video" src="' +
-                  data.data.src +
-                  '" playsinline></video></section>',
-                0
-              );
-              v = document.querySelector('.slides video');
-            } else {
-              v.src = data.data.src;
-            }
-          }
-          applyVideoStyles();
-          if (v) {
-            if (data.data && data.data.currentTime != null) v.currentTime = data.data.currentTime;
-            v.play().catch(function () {});
-          }
+          playSlideVideo(
+            data.data && data.data.src ? data.data.src : null,
+            data.data && data.data.currentTime != null ? data.data.currentTime : null
+          );
         }
         if (fn === 'pauseVideo') {
           var pv = document.querySelector('.slides video');
@@ -247,6 +364,7 @@
           setPairingVisible(!!snap.pairingVisible && !snap.slidesHtml);
           if (snap.cleared) $('.reveal').addClass('cleared');
           if (snap.logo && !snap.slidesHtml) showDefaultLogo();
+          if (snap.browserFullscreen) enterBrowserFullscreen();
         }
         if (fn === 'controlChanged') {
           if (data.data && data.data.pairingVisible) setPairingVisible(true);
@@ -352,6 +470,12 @@
           } catch (e) {}
         }
         startRemote();
+        var fsBtn = document.getElementById('fsPrompt');
+        if (fsBtn) {
+          fsBtn.addEventListener('click', function () {
+            enterBrowserFullscreen();
+          });
+        }
         document.addEventListener('keydown', function (e) {
           if (e.key === 'p' || e.key === 'P') {
             setPairingVisible(true);

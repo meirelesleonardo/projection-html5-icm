@@ -20,8 +20,16 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 - **Ao vivo:** anterior / próximo, tap no slide, swipe.
 - **Lista:** itens do culto; toque para projetar.
 - **Louvores:** busca na biblioteca do servidor (`data.json`); toque adiciona à lista e projeta.
-- **Mídia:** vídeos em `media/videos`, upload do celular, play/pause, stream de câmera (WebRTC).
-- **Mais:** assumir comando, mostrar QR no projetor, tela preta, logo, fonte, perfil 720p/1080p.
+- **Mídia:**
+  - Enviar vídeo (mantém o **nome original**; se já existir, grava `nome_2.mp4`, `nome_3.mp4`…).
+  - **Projetar**, **Renomear**, **Apagar** cada arquivo no PC.
+  - **Usar como fundo de letra** / **Limpar fundo de letra**.
+  - Contain / Cover / Tela cheia do vídeo projetado.
+- **Mais:** assumir comando, QR no projetor, tela preta, logo, fonte, perfil 720p/1080p, **Tela cheia View** / **Sair tela cheia**.
+
+### Tela cheia da View
+
+O botão **Tela cheia View** pede fullscreen no navegador do projetor. Se o Chrome bloquear (sem gesto local), aparece na View a faixa **“Toque aqui para tela cheia”** — toque uma vez no PC/projetor. No culto, o mais estável é abrir a View com Chrome `--kiosk` (veja `install-zorin.md`).
 
 ## Dois celulares
 

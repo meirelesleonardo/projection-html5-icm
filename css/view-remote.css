@@ -60,6 +60,27 @@
 #connDot.on { background: #3c9; }
 #connDot.off { background: #c44; }
 
+.fs-prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 4vh;
+  transform: translateX(-50%);
+  z-index: 10002;
+  padding: 1.2vh 2.5vw;
+  font-size: 2vw;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-weight: 650;
+  border: none;
+  border-radius: 999px;
+  background: #c9a227;
+  color: #111;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.45);
+}
+.fs-prompt[hidden] {
+  display: none !important;
+}
+
 #remoteVideoLayer {
   position: fixed;
   inset: 0;

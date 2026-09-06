@@ -304,12 +304,26 @@
       titleHtml +
       '<video src="' +
       escapeAttr(src) +
-      '" playsinline ' +
+      '" playsinline webkit-playsinline data-autoplay ' +
       (full ? '' : 'controls ') +
       'class="proj-video" style="object-fit:' +
       escapeAttr(fit) +
       '"></video></section>'
     );
+  }
+
+  function projectVideo(src, title) {
+    ensureControl(function () {
+      var html = videoSlide(src, title);
+      state.slidesHtml = html;
+      state.slideIndex = 0;
+      sendCmd('reloadReveal', html);
+      sendCmd('changeSlide', 0);
+      sendCmd('hidePairing', true);
+      sendCmd('playVideo', { src: src, currentTime: 0 });
+      renderSlides();
+      showTab('live');
+    });
   }
 
   function applyVideoFit(fit, fullscreen) {
@@ -358,10 +372,7 @@
         '</small>';
       div.addEventListener('click', function () {
         if (item.type === 'video') {
-          projectHtml(videoSlide(item.src, item.title));
-          ensureControl(function () {
-            sendCmd('playVideo', { src: item.src, currentTime: 0 });
-          });
+          projectVideo(item.src, item.title);
         } else if (item.html) {
           projectHtml(item.html);
         } else if (item.song) {
@@ -486,7 +497,134 @@
       });
   }
 
+  function updateBgStatus() {
+    var el = $('bgStatus');
+    if (!el) return;
+    if (videoBgSrc) {
+      var name = videoBgSrc.split('/').pop();
+      try {
+        name = decodeURIComponent(name);
+      } catch (_) {}
+      el.textContent = 'Fundo ativo: ' + name;
+      el.className = 'status ok';
+    } else {
+      el.textContent = 'Nenhum fundo de vídeo';
+      el.className = 'status';
+    }
+  }
+
+  function clearVideoBg() {
+    videoBgSrc = null;
+    updateBgStatus();
+  }
+
+  function deleteVideo(name, src) {
+    if (!confirm('Apagar o vídeo "' + name + '" do PC?')) return;
+    fetch(baseUrl + '/api/media/videos/' + encodeURIComponent(name), { method: 'DELETE' })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { ok: r.ok, j: j };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          alert((res.j && res.j.error) || 'Falha ao apagar');
+          return;
+        }
+        if (videoBgSrc === src) clearVideoBg();
+        state.playlist = state.playlist.filter(function (it) {
+          return !(it && it.src === src);
+        });
+        syncPlaylist();
+        renderPlaylist();
+        loadVideos();
+      })
+      .catch(function () {
+        alert('Falha ao apagar');
+      });
+  }
+
+  function renameVideo(name) {
+    var next = prompt('Novo nome do arquivo:', name);
+    if (next == null) return;
+    next = String(next).trim();
+    if (!next || next === name) return;
+    fetch(baseUrl + '/api/media/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: name, to: next }),
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { status: r.status, ok: r.ok, j: j };
+        });
+      })
+      .then(function (res) {
+        if (res.status === 409) {
+          var sug = res.j && res.j.suggested;
+          if (sug && confirm('Já existe. Usar o nome sugerido "' + sug + '"?')) {
+            renameVideoApply(name, sug);
+          }
+          return;
+        }
+        if (!res.ok) {
+          alert((res.j && res.j.error) || 'Falha ao renomear');
+          return;
+        }
+        afterRename(name, res.j.name, res.j.src);
+      })
+      .catch(function () {
+        alert('Falha ao renomear');
+      });
+  }
+
+  function renameVideoApply(from, to) {
+    fetch(baseUrl + '/api/media/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: from, to: to }),
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { ok: r.ok, j: j };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          alert((res.j && res.j.error) || 'Falha ao renomear');
+          return;
+        }
+        afterRename(from, res.j.name, res.j.src);
+      });
+  }
+
+  function afterRename(oldName, newName, newSrc) {
+    var oldSrc = '/media/videos/' + encodeURIComponent(oldName);
+    if (videoBgSrc === oldSrc || videoBgSrc === '/media/videos/' + oldName) {
+      videoBgSrc = newSrc;
+      updateBgStatus();
+    }
+    state.playlist.forEach(function (it) {
+      if (it && (it.src === oldSrc || it.src === '/media/videos/' + oldName)) {
+        it.src = newSrc;
+        it.title = newName;
+      }
+    });
+    // Refresh currently projected HTML if it pointed at the old file
+    if (state.slidesHtml && state.slidesHtml.indexOf(oldName) !== -1) {
+      state.slidesHtml = state.slidesHtml.split(oldSrc).join(newSrc);
+      if (oldSrc !== '/media/videos/' + oldName) {
+        state.slidesHtml = state.slidesHtml.split('/media/videos/' + oldName).join(newSrc);
+      }
+      projectVideo(newSrc, newName);
+    }
+    syncPlaylist();
+    renderPlaylist();
+    loadVideos();
+  }
+
   function loadVideos() {
+    updateBgStatus();
     fetch(baseUrl + '/api/media/list')
       .then(function (r) {
         return r.json();
@@ -495,29 +633,53 @@
         var box = $('videoList');
         box.innerHTML = '';
         (data.videos || []).forEach(function (v) {
-          var btn = document.createElement('button');
-          btn.className = 'secondary';
-          btn.textContent = v.name;
-          btn.addEventListener('click', function () {
+          var wrap = document.createElement('div');
+          wrap.className = 'card';
+          wrap.style.padding = '0.65rem';
+          wrap.style.marginBottom = '0.5rem';
+          var title = document.createElement('div');
+          title.style.marginBottom = '0.35rem';
+          title.innerHTML = '<strong>' + escapeHtml(v.name) + '</strong>';
+          wrap.appendChild(title);
+
+          var play = document.createElement('button');
+          play.className = 'secondary';
+          play.textContent = 'Projetar';
+          play.addEventListener('click', function () {
             var item = { type: 'video', title: v.name, src: v.src };
             state.playlist.push(item);
             syncPlaylist();
             renderPlaylist();
-            projectHtml(videoSlide(v.src, v.name));
-            ensureControl(function () {
-              sendCmd('playVideo', { src: v.src, currentTime: 0 });
-            });
+            projectVideo(v.src, v.name);
           });
+          wrap.appendChild(play);
+
           var bg = document.createElement('button');
           bg.className = 'secondary';
           bg.textContent = 'Usar como fundo de letra';
-          bg.addEventListener('click', function (e) {
-            e.stopPropagation();
+          bg.addEventListener('click', function () {
             videoBgSrc = v.src;
-            alert('Próximo louvor usará este vídeo de fundo.');
+            updateBgStatus();
           });
-          box.appendChild(btn);
-          box.appendChild(bg);
+          wrap.appendChild(bg);
+
+          var ren = document.createElement('button');
+          ren.className = 'secondary';
+          ren.textContent = 'Renomear';
+          ren.addEventListener('click', function () {
+            renameVideo(v.name);
+          });
+          wrap.appendChild(ren);
+
+          var del = document.createElement('button');
+          del.className = 'danger';
+          del.textContent = 'Apagar';
+          del.addEventListener('click', function () {
+            deleteVideo(v.name, v.src);
+          });
+          wrap.appendChild(del);
+
+          box.appendChild(wrap);
         });
         if (!(data.videos || []).length) {
           box.innerHTML = '<p class="status">Nenhum MP4 em media/videos</p>';
@@ -698,10 +860,7 @@
             return r.json();
           })
           .then(function (res) {
-            projectHtml(videoSlide(res.src, file.name));
-            ensureControl(function () {
-              sendCmd('playVideo', { src: res.src, currentTime: 0 });
-            });
+            projectVideo(res.src, file.name);
             alert('Stream indisponível — vídeo enviado e projetado.');
           })
           .catch(function () {
@@ -841,6 +1000,25 @@
   $('btnLogo').addEventListener('click', function () {
     projectHtml(buildLogoSlide());
   });
+  if ($('btnClearBg')) {
+    $('btnClearBg').addEventListener('click', function () {
+      clearVideoBg();
+    });
+  }
+  if ($('btnViewFullscreen')) {
+    $('btnViewFullscreen').addEventListener('click', function () {
+      ensureControl(function () {
+        sendCmd('setBrowserFullscreen', { on: true });
+      });
+    });
+  }
+  if ($('btnViewExitFullscreen')) {
+    $('btnViewExitFullscreen').addEventListener('click', function () {
+      ensureControl(function () {
+        sendCmd('setBrowserFullscreen', { on: false });
+      });
+    });
+  }
   $('btnFontDown').addEventListener('click', function () {
     ensureControl(function () {
       state.fontSize = Math.max(1, Number(state.fontSize) - 0.5);
@@ -887,10 +1065,7 @@
         state.playlist.push(item);
         syncPlaylist();
         renderPlaylist();
-        projectHtml(videoSlide(res.src, res.name));
-        ensureControl(function () {
-          sendCmd('playVideo', { src: res.src, currentTime: 0 });
-        });
+        projectVideo(res.src, res.name);
       })
       .catch(function () {
         alert('Falha no upload');

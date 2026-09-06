@@ -64,6 +64,8 @@
     <div id="tab-media" class="tab-panel hidden">
       <div class="card">
         <h2>Vídeos no PC</h2>
+        <p class="status" id="bgStatus">Nenhum fundo de vídeo</p>
+        <button class="secondary" id="btnClearBg">Limpar fundo de letra</button>
         <div id="videoList"></div>
         <label for="videoFile">Enviar vídeo do celular</label>
         <input id="videoFile" type="file" accept="video/*">
@@ -81,7 +83,7 @@
         <button id="btnPauseVid">Pause</button>
         <button class="secondary" id="btnVideoContain">Contain</button>
         <button class="secondary" id="btnVideoCover">Cover</button>
-        <button id="btnVideoFull">Tela cheia</button>
+        <button id="btnVideoFull">Tela cheia vídeo</button>
       </div>
     </div>
 
@@ -93,6 +95,8 @@
         <button class="secondary" id="btnLogo">Logo / padrão</button>
         <button class="secondary" id="btnFontDown">Fonte −</button>
         <button class="secondary" id="btnFontUp">Fonte +</button>
+        <button id="btnViewFullscreen">Tela cheia View</button>
+        <button class="secondary" id="btnViewExitFullscreen">Sair tela cheia</button>
       </div>
       <div class="card" style="margin-top:1rem">
         <label for="displayProfile">Perfil do projetor</label>

@@ -7,6 +7,16 @@ const DISPLAY_PRESETS = {
   '1080p': { width: 1920, height: 1080 },
 };
 
+function pathBasename(src) {
+  try {
+    const s = decodeURIComponent(String(src || ''));
+    const parts = s.split('/');
+    return parts[parts.length - 1] || s;
+  } catch (_) {
+    return String(src || '');
+  }
+}
+
 class Room {
   constructor(config) {
     this.config = config;
@@ -25,7 +35,19 @@ class Room {
       displayProfile: config.displayProfile || '1080p',
       video: { playing: false, currentTime: 0, src: null, fit: 'contain', fullscreen: false },
       streamActive: false,
+      browserFullscreen: false,
     };
+  }
+
+  rewritePlaylistSrc(oldSrc, newSrc) {
+    if (!Array.isArray(this.state.playlist)) return;
+    this.state.playlist = this.state.playlist
+      .map((item) => {
+        if (!item || item.src !== oldSrc) return item;
+        if (newSrc == null) return null;
+        return { ...item, src: newSrc, title: pathBasename(newSrc) };
+      })
+      .filter(Boolean);
   }
 
   displaySize() {
@@ -131,6 +153,7 @@ class Room {
         this.state.slideIndex = 0;
         this.state.cleared = false;
         this.state.logo = false;
+        this.state.pairingVisible = false;
         break;
       case 'changeSlide':
         this.state.slideIndex = Number(data) || 0;
@@ -169,6 +192,9 @@ class Room {
           fit: (data && data.fit) || this.state.video.fit || 'contain',
           fullscreen: !!(data && data.fullscreen),
         };
+        break;
+      case 'setBrowserFullscreen':
+        this.state.browserFullscreen = !!(data && (data.on === true || data === true));
         break;
       case 'playlistUpdate':
         this.state.playlist = Array.isArray(data) ? data : [];
