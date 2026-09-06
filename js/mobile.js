@@ -46,14 +46,25 @@
   }
 
   function showTab(name) {
+    var activeBtn = null;
     document.querySelectorAll('.nav-tabs button').forEach(function (b) {
-      b.classList.toggle('active', b.getAttribute('data-tab') === name);
+      var on = b.getAttribute('data-tab') === name;
+      b.classList.toggle('active', on);
+      if (on) activeBtn = b;
     });
-    ['live', 'playlist', 'library', 'bible', 'media', 'more'].forEach(function (t) {
+    ['live', 'playlist', 'library', 'bible', 'decks', 'media', 'more'].forEach(function (t) {
       var el = $('tab-' + t);
       if (el) el.classList.toggle('hidden', t !== name);
     });
+    if (activeBtn && typeof activeBtn.scrollIntoView === 'function') {
+      try {
+        activeBtn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+      } catch (e) {
+        activeBtn.scrollIntoView(false);
+      }
+    }
     if (name === 'bible') initBibleTab();
+    if (name === 'decks') loadDecks();
   }
 
   function schedulePersist() {
@@ -231,6 +242,10 @@
       'btnLiveCover',
       'btnLiveFull',
       'btnLiveExitFull',
+      'btnLiveUnmute',
+      'btnLiveMute',
+      'btnVideoUnmute',
+      'btnVideoMute',
       'btnBibleAdd',
     ].forEach(function (id) {
       var el = $(id);
@@ -315,6 +330,12 @@
   function pauseVideoCmd() {
     ensureControl(function () {
       sendCmd('pauseVideo', {});
+    });
+  }
+
+  function setVideoMuted(muted) {
+    ensureControl(function () {
+      sendCmd('setVideoMuted', { muted: !!muted });
     });
   }
 
@@ -464,7 +485,7 @@
     var box = $('playlistBox');
     box.innerHTML = '';
     if (!state.playlist.length) {
-      box.innerHTML = '<p class="status">Lista vazia — adicione louvores, bíblia ou vídeos.</p>';
+      box.innerHTML = '<p class="status">Lista vazia — adicione louvores, bíblia, slides ou vídeos.</p>';
       schedulePersist();
       return;
     }
@@ -485,6 +506,8 @@
           projectHtml(item.html);
         } else if (item.song) {
           projectHtml(songToHtml(item.song));
+        } else if (item.type === 'deck' && item.slides) {
+          projectHtml(deckToHtml(item.slides, item.title));
         } else if (item.type === 'logo' || item.type === 'bible') {
           projectHtml(item.html || buildLogoSlide());
         }
@@ -816,6 +839,179 @@
       setStatus($('appStatus'), 'Bíblia na lista: ' + title, 'ok');
       schedulePersist();
     });
+  }
+
+  function deckToHtml(slides, title) {
+    var html = '';
+    (slides || []).forEach(function (src, i) {
+      html +=
+        '<section data-background="#000000" class="deck-slide" data-deck-slide="' +
+        i +
+        '">' +
+        '<img class="deck-img" src="' +
+        escapeAttr(src) +
+        '" alt="' +
+        escapeAttr((title || 'Slide') + ' ' + (i + 1)) +
+        '" style="max-width:100%;max-height:100%;object-fit:contain;display:block;margin:0 auto">' +
+        '</section>\n';
+    });
+    html +=
+      '<section data-background="' +
+      BG_DEFAULT +
+      '" data-state="show_backlay1">' +
+      '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+      '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>\n';
+    return html;
+  }
+
+  function loadDecks() {
+    if (!baseUrl) return;
+    var box = $('deckList');
+    if (!box) return;
+    box.innerHTML = '<p class="status">Carregando…</p>';
+    fetch(baseUrl + '/api/decks/list')
+      .then(function (r) {
+        return r.json();
+      })
+      .then(function (data) {
+        renderDeckList(data.decks || []);
+      })
+      .catch(function () {
+        box.innerHTML = '<p class="status bad">Falha ao listar apresentações</p>';
+      });
+  }
+
+  function renderDeckList(decks) {
+    var box = $('deckList');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!decks.length) {
+      box.innerHTML = '<p class="status">Nenhuma apresentação convertida ainda.</p>';
+      return;
+    }
+    decks.forEach(function (d) {
+      var wrap = document.createElement('div');
+      wrap.className = 'card';
+      wrap.style.padding = '0.65rem';
+      wrap.style.marginBottom = '0.5rem';
+      wrap.innerHTML =
+        '<strong>' +
+        escapeHtml(d.title || d.id) +
+        '</strong><br><small>' +
+        escapeHtml(String(d.slideCount || (d.slides && d.slides.length) || 0)) +
+        ' slides</small>';
+
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'secondary';
+      add.textContent = 'Adicionar à lista';
+      add.addEventListener('click', function () {
+        var html = deckToHtml(d.slides, d.title);
+        state.playlist.push({
+          type: 'deck',
+          title: d.title || 'Apresentação',
+          deckId: d.id,
+          slides: d.slides,
+          html: html,
+        });
+        syncPlaylist();
+        renderPlaylist();
+        setStatus($('appStatus'), 'Slides na lista: ' + (d.title || d.id), 'ok');
+        schedulePersist();
+      });
+
+      var proj = document.createElement('button');
+      proj.type = 'button';
+      proj.textContent = 'Projetar';
+      proj.addEventListener('click', function () {
+        var html = deckToHtml(d.slides, d.title);
+        state.playlist.push({
+          type: 'deck',
+          title: d.title || 'Apresentação',
+          deckId: d.id,
+          slides: d.slides,
+          html: html,
+        });
+        syncPlaylist();
+        renderPlaylist();
+        projectHtml(html);
+      });
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'danger';
+      del.textContent = 'Apagar';
+      del.addEventListener('click', function () {
+        if (!confirm('Apagar apresentação "' + (d.title || d.id) + '" do PC?')) return;
+        fetch(baseUrl + '/api/decks/' + encodeURIComponent(d.id), { method: 'DELETE' })
+          .then(function (r) {
+            return r.json().then(function (j) {
+              return { ok: r.ok, j: j };
+            });
+          })
+          .then(function (res) {
+            if (!res.ok) {
+              alert((res.j && res.j.error) || 'Falha ao apagar');
+              return;
+            }
+            loadDecks();
+          })
+          .catch(function () {
+            alert('Falha ao apagar');
+          });
+      });
+
+      wrap.appendChild(add);
+      wrap.appendChild(proj);
+      wrap.appendChild(del);
+      box.appendChild(wrap);
+    });
+  }
+
+  function uploadDeck() {
+    var file = $('deckFile') && $('deckFile').files[0];
+    var st = $('deckStatus');
+    if (!file || !baseUrl) {
+      if (st) {
+        st.textContent = 'Escolha um arquivo .pptx ou .pdf';
+        st.className = 'status bad';
+      }
+      return;
+    }
+    if (st) {
+      st.textContent = 'Enviando e convertendo… (pode levar um minuto)';
+      st.className = 'status';
+    }
+    var fd = new FormData();
+    fd.append('file', file);
+    fetch(baseUrl + '/api/decks/upload', { method: 'POST', body: fd })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { ok: r.ok, status: r.status, j: j };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          if (st) {
+            st.textContent = (res.j && res.j.error) || 'Falha na conversão';
+            st.className = 'status bad';
+          }
+          return;
+        }
+        if (st) {
+          st.textContent =
+            'Pronto: ' + (res.j.title || '') + ' (' + (res.j.slideCount || 0) + ' slides)';
+          st.className = 'status ok';
+        }
+        if ($('deckFile')) $('deckFile').value = '';
+        loadDecks();
+      })
+      .catch(function () {
+        if (st) {
+          st.textContent = 'Falha de rede no upload';
+          st.className = 'status bad';
+        }
+      });
   }
 
   function deleteVideo(name, src) {
@@ -1380,6 +1576,11 @@
   $('libSearch').addEventListener('input', function () {
     renderLibrary($('libSearch').value);
   });
+  if ($('btnDeckUpload')) {
+    $('btnDeckUpload').addEventListener('click', function () {
+      uploadDeck();
+    });
+  }
   $('btnUploadVideo').addEventListener('click', function () {
     var file = $('videoFile').files[0];
     if (!file || !baseUrl) return;
@@ -1435,6 +1636,16 @@
       applyVideoFit(state.videoFit || 'contain', false);
     });
   }
+  if ($('btnLiveUnmute')) {
+    $('btnLiveUnmute').addEventListener('click', function () {
+      setVideoMuted(false);
+    });
+  }
+  if ($('btnLiveMute')) {
+    $('btnLiveMute').addEventListener('click', function () {
+      setVideoMuted(true);
+    });
+  }
   if ($('btnVideoContain')) {
     $('btnVideoContain').addEventListener('click', function () {
       applyVideoFit('contain', false);
@@ -1448,6 +1659,16 @@
   if ($('btnVideoFull')) {
     $('btnVideoFull').addEventListener('click', function () {
       applyVideoFit('cover', true);
+    });
+  }
+  if ($('btnVideoUnmute')) {
+    $('btnVideoUnmute').addEventListener('click', function () {
+      setVideoMuted(false);
+    });
+  }
+  if ($('btnVideoMute')) {
+    $('btnVideoMute').addEventListener('click', function () {
+      setVideoMuted(true);
     });
   }
   $('btnStartStream').addEventListener('click', function () {

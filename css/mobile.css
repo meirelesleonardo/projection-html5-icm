@@ -78,21 +78,38 @@ button:disabled { opacity: 0.45; }
 
 .nav-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.35rem;
   margin-bottom: 0.75rem;
   position: sticky;
   top: 0;
   background: var(--bg);
   z-index: 5;
-  padding: 0.5rem 0;
-  overscroll-behavior-y: contain;
+  padding: 0.5rem 0.25rem;
+  overscroll-behavior-x: contain;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+.nav-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+.nav-tabs::-webkit-scrollbar-thumb {
+  background: #445;
+  border-radius: 3px;
 }
 .nav-tabs button {
   margin-top: 0;
   background: #243044;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  flex: 0 0 auto;
+  min-width: auto;
+  width: auto;
+  padding: 0.55rem 0.75rem;
+  scroll-snap-align: start;
+  white-space: nowrap;
 }
 .nav-tabs button.active { background: var(--accent); color: #111; }
 

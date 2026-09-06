@@ -34,11 +34,12 @@
 
   <section id="screen-app" class="screen">
     <div class="status" id="appStatus">…</div>
-    <div class="nav-tabs">
+    <div class="nav-tabs nav-carousel">
       <button type="button" data-tab="live" class="active">Ao vivo</button>
       <button type="button" data-tab="playlist">Lista</button>
       <button type="button" data-tab="library">Louvores</button>
       <button type="button" data-tab="bible">Bíblia</button>
+      <button type="button" data-tab="decks">Slides</button>
       <button type="button" data-tab="media">Mídia</button>
       <button type="button" data-tab="more">Mais</button>
     </div>
@@ -61,6 +62,8 @@
           <button type="button" class="secondary" id="btnLiveCover">Cover</button>
           <button type="button" id="btnLiveFull">Tela cheia vídeo</button>
           <button type="button" class="secondary" id="btnLiveExitFull">Sair tela cheia</button>
+          <button type="button" id="btnLiveUnmute">Som</button>
+          <button type="button" class="secondary" id="btnLiveMute">Mudo</button>
         </div>
       </div>
       <div class="slide-list" id="slideList"></div>
@@ -104,6 +107,18 @@
       </div>
     </div>
 
+    <div id="tab-decks" class="tab-panel hidden">
+      <div class="card">
+        <h2>Apresentações</h2>
+        <p class="status">Envie .pptx / .pdf — o PC converte em slides para o projetor.</p>
+        <label for="deckFile">Arquivo</label>
+        <input id="deckFile" type="file" accept=".pptx,.ppt,.odp,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+        <button type="button" id="btnDeckUpload">Enviar e converter</button>
+        <p class="status" id="deckStatus"></p>
+      </div>
+      <div class="card" id="deckList"></div>
+    </div>
+
     <div id="tab-media" class="tab-panel hidden">
       <div class="card">
         <h2>Vídeos no PC</h2>
@@ -127,6 +142,8 @@
         <button class="secondary" id="btnVideoContain">Contain</button>
         <button class="secondary" id="btnVideoCover">Cover</button>
         <button id="btnVideoFull">Tela cheia vídeo</button>
+        <button id="btnVideoUnmute">Som</button>
+        <button class="secondary" id="btnVideoMute">Mudo</button>
       </div>
     </div>
 

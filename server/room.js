@@ -33,7 +33,7 @@ class Room {
       logo: false,
       pairingVisible: true,
       displayProfile: config.displayProfile || '1080p',
-      video: { playing: false, currentTime: 0, src: null, fit: 'contain', fullscreen: false },
+      video: { playing: false, currentTime: 0, src: null, fit: 'contain', fullscreen: false, muted: false },
       streamActive: false,
       browserFullscreen: false,
     };
@@ -208,6 +208,13 @@ class Room {
           playing: true,
           currentTime: (data && data.currentTime) || 0,
           src: (data && data.src) || this.state.video.src,
+          muted: data && data.src ? false : this.state.video.muted,
+        };
+        break;
+      case 'setVideoMuted':
+        this.state.video = {
+          ...this.state.video,
+          muted: !!(data && (data.muted === true || data === true)),
         };
         break;
       case 'pauseVideo':

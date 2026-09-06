@@ -19,6 +19,18 @@ node -v   # >= 18
 
 Se a versão do apt for antiga, use o [NodeSource](https://github.com/nodesource/distributions) ou `nvm`.
 
+## 1b. LibreOffice + Poppler (apresentações PPTX/PDF)
+
+Para o módulo **Slides** no mobile (converter `.pptx` / `.pdf` em imagens no projetor):
+
+```bash
+sudo apt install -y libreoffice-impress libreoffice-draw poppler-utils
+soffice --version
+pdftoppm -v
+```
+
+Sem esses pacotes, o upload de apresentação retorna erro claro no celular.
+
 ## 2. Clonar / copiar o projeto
 
 ```bash

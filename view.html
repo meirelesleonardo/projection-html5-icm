@@ -73,6 +73,7 @@
       var currentDisplayProfile = null;
       var videoFit = 'contain';
       var videoFullscreen = false;
+      var videoMuted = false;
 
       var DEFAULT_LOGO_HTML =
         '<section data-background="imagens/fundo.jpg" data-state="show_backlay1">' +
@@ -132,6 +133,10 @@
         var v = document.querySelector('.reveal .slides video');
         var url = optSrc ? resolveMediaUrl(optSrc) : null;
         var changedSrc = false;
+        if (url) {
+          // New projection prefers sound; operator can mute explicitly
+          videoMuted = false;
+        }
         if (url && !v) {
           reloadReveal(
             '<section class="video-slide">' +
@@ -153,6 +158,8 @@
         v.removeAttribute('data-autoplay');
         v.setAttribute('playsinline', '');
         v.setAttribute('webkit-playsinline', '');
+        // Prefer unmuted; only mute as autoplay fallback
+        v.muted = !!videoMuted;
         var forceTime = currentTime != null && !isNaN(Number(currentTime));
         if (forceTime) {
           try {
@@ -162,11 +169,15 @@
         // Already playing same source — do not reload (avoids restart loops)
         if (!changedSrc && !v.paused && !forceTime) return;
         var start = function () {
+          v.muted = !!videoMuted;
           var p = v.play();
           if (p && typeof p.catch === 'function') {
             p.catch(function () {
-              v.muted = true;
-              v.play().catch(function () {});
+              if (!videoMuted) {
+                videoMuted = true;
+                v.muted = true;
+                v.play().catch(function () {});
+              }
             });
           }
         };
@@ -182,6 +193,19 @@
         } else if (v.readyState >= 2) {
           start();
         }
+      }
+
+      function applyVideoMuted(muted) {
+        videoMuted = !!muted;
+        document.querySelectorAll('.reveal .slides video').forEach(function (v) {
+          v.muted = videoMuted;
+          if (!videoMuted) {
+            var p = v.play();
+            if (p && typeof p.catch === 'function') {
+              p.catch(function () {});
+            }
+          }
+        });
       }
 
       function applyVideoStyles() {
@@ -369,6 +393,12 @@
             data.data && data.data.currentTime != null ? data.data.currentTime : null
           );
         }
+        if (fn === 'setVideoMuted') {
+          var muted =
+            data.data === true ||
+            (data.data && (data.data.muted === true || data.data.muted === 'true'));
+          applyVideoMuted(muted);
+        }
         if (fn === 'pauseVideo') {
           var pv = document.querySelector('.slides video');
           if (pv) pv.pause();
@@ -394,6 +424,7 @@
           if (snap.video) {
             if (snap.video.fit) videoFit = snap.video.fit;
             if (snap.video.fullscreen != null) videoFullscreen = !!snap.video.fullscreen;
+            if (snap.video.muted != null) videoMuted = !!snap.video.muted;
           }
           if (snap.slidesHtml) {
             reloadReveal(snap.slidesHtml, snap.slideIndex || 0);

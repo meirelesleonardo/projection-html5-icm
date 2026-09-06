@@ -11,6 +11,13 @@ const { WebSocketServer } = require('ws');
 const { Room } = require('./room');
 const { buildInfo, pairingUrls, startUdpBeacon, listLanIps } = require('./discovery');
 const { sanitizeFilename, uniqueMediaName, safeVideoPath } = require('./media');
+const {
+  listDecks,
+  deleteDeck,
+  safeDeckId,
+  convertUploadedDeck,
+  DECK_EXTS,
+} = require('./decks');
 
 const ROOT = path.join(__dirname, '..');
 const configPath = path.join(__dirname, 'config.json');
@@ -29,9 +36,12 @@ function mediaPublicSrc(folder, filename) {
   return `/media/${folder}/${safe}`;
 }
 
-for (const sub of ['videos', 'tmp', 'images']) {
+for (const sub of ['videos', 'tmp', 'images', 'decks']) {
   fs.mkdirSync(path.join(mediaDir, sub), { recursive: true });
 }
+
+const decksDir = path.join(mediaDir, 'decks');
+const decksUploadDir = path.join(mediaDir, 'tmp');
 
 const app = express();
 const server = http.createServer(app);
@@ -52,6 +62,22 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 500 * 1024 * 1024 },
+});
+
+const deckUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      cb(null, decksUploadDir);
+    },
+    filename(req, file, cb) {
+      cb(null, uniqueMediaName(decksUploadDir, file.originalname));
+    },
+  }),
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    if (DECK_EXTS.test(file.originalname)) cb(null, true);
+    else cb(new Error('Use .pptx, .ppt, .odp ou .pdf'));
+  },
 });
 
 app.use(express.json({ limit: '20mb' }));
@@ -188,6 +214,33 @@ app.post('/api/playlist', (req, res) => {
   res.json({ ok: true, count: playlist.length });
 });
 
+app.get('/api/decks/list', (req, res) => {
+  res.json({ decks: listDecks(decksDir) });
+});
+
+app.post('/api/decks/upload', (req, res) => {
+  deckUpload.single('file')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message || 'Upload inválido' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    try {
+      const meta = await convertUploadedDeck(decksDir, req.file.path, req.file.originalname);
+      return res.json(meta);
+    } catch (e) {
+      const status = e.code === 'MISSING_TOOLS' ? 503 : 500;
+      return res.status(status).json({ error: e.message || 'Falha na conversão' });
+    }
+  });
+});
+
+app.delete('/api/decks/:id', (req, res) => {
+  const id = safeDeckId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  if (!deleteDeck(decksDir, id)) return res.status(404).json({ error: 'not found' });
+  return res.json({ ok: true, id });
+});
+
 app.use('/media', express.static(mediaDir));
 app.use(express.static(ROOT));
 
@@ -217,6 +270,7 @@ const CONTROL_FUNCTIONS = new Set([
   'playVideo',
   'pauseVideo',
   'seekVideo',
+  'setVideoMuted',
   'streamStarted',
   'streamStopped',
 ]);
