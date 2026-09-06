@@ -23,7 +23,7 @@ class Room {
       logo: false,
       pairingVisible: true,
       displayProfile: config.displayProfile || '1080p',
-      video: { playing: false, currentTime: 0, src: null },
+      video: { playing: false, currentTime: 0, src: null, fit: 'contain', fullscreen: false },
       streamActive: false,
     };
   }
@@ -146,8 +146,13 @@ class Room {
         this.state.cleared = Boolean(data === undefined ? true : data);
         break;
       case 'showLogo':
-        this.state.logo = Boolean(data === undefined ? true : data);
+        this.state.logo = true;
         this.state.cleared = false;
+        this.state.pairingVisible = false;
+        if (typeof data === 'string' && data.indexOf('<section') !== -1) {
+          this.state.slidesHtml = data;
+          this.state.slideIndex = 0;
+        }
         break;
       case 'showPairing':
         this.state.pairingVisible = true;
@@ -158,6 +163,13 @@ class Room {
       case 'setDisplayProfile':
         if (DISPLAY_PRESETS[data]) this.state.displayProfile = data;
         break;
+      case 'setVideoFit':
+        this.state.video = {
+          ...this.state.video,
+          fit: (data && data.fit) || this.state.video.fit || 'contain',
+          fullscreen: !!(data && data.fullscreen),
+        };
+        break;
       case 'playlistUpdate':
         this.state.playlist = Array.isArray(data) ? data : [];
         break;
@@ -166,6 +178,7 @@ class Room {
         break;
       case 'playVideo':
         this.state.video = {
+          ...this.state.video,
           playing: true,
           currentTime: (data && data.currentTime) || 0,
           src: (data && data.src) || this.state.video.src,

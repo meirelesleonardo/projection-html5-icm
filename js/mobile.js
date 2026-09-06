@@ -11,11 +11,17 @@
     library: null,
     youControl: false,
     role: 'controller',
+    videoFit: 'contain',
+    videoFullscreen: false,
   };
   var slideCount = 0;
   var pc = null;
   var localStream = null;
   var qrStream = null;
+  var videoBgSrc = null;
+  var controlWaiters = [];
+  var BG_DEFAULT = 'imagens/fundo.jpg';
+  var LOGO_SLIDE_HTML = null;
 
   var $ = function (id) {
     return document.getElementById(id);
@@ -44,6 +50,67 @@
       var el = $('tab-' + t);
       if (el) el.classList.toggle('hidden', t !== name);
     });
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/'/g, '&#39;');
+  }
+
+  /** Wait until this device has control, then run fn. Never drop silently. */
+  function ensureControl(fn) {
+    if (state.role === 'observer') {
+      setStatus($('appStatus'), 'Modo observador — não pode controlar', 'bad');
+      return;
+    }
+    if (!transport || !transport.connected) {
+      setStatus($('appStatus'), 'Desconectado do servidor', 'bad');
+      return;
+    }
+    if (state.youControl || (transport.youControl && transport.clientId === transport.controllerId)) {
+      state.youControl = true;
+      fn();
+      return;
+    }
+    controlWaiters.push(fn);
+    setStatus($('appStatus'), 'Assumindo comando…', '');
+    transport.takeControl();
+    setTimeout(function () {
+      if (!controlWaiters.length) return;
+      // Retry once if welcome already gave us control but flag lagged
+      if (transport.youControl || transport.clientId === transport.controllerId) {
+        state.youControl = true;
+        flushControlWaiters();
+      } else {
+        setStatus($('appStatus'), 'Toque em Assumir comando e tente de novo', 'bad');
+        controlWaiters = [];
+      }
+    }, 800);
+  }
+
+  function flushControlWaiters() {
+    var queue = controlWaiters.slice();
+    controlWaiters = [];
+    queue.forEach(function (fn) {
+      try {
+        fn();
+      } catch (e) {
+        console.error(e);
+      }
+    });
+    updateControlUi();
+  }
+
+  function sendCmd(fn, data) {
+    if (!transport) return false;
+    return transport.send(fn, data);
   }
 
   function parseSlides(html) {
@@ -80,100 +147,197 @@
   }
 
   function updateControlUi() {
-    var can = state.role === 'observer' ? false : state.youControl;
-    ['btnPrev', 'btnNext', 'btnBlack', 'btnLogo', 'btnFontUp', 'btnFontDown', 'btnPlayVid', 'btnPauseVid'].forEach(
-      function (id) {
-        var el = $(id);
-        if (el) el.disabled = !can && state.role !== 'observer';
-        if (state.role === 'observer' && el) el.disabled = true;
-      }
-    );
+    var can = state.role !== 'observer';
+    [
+      'btnPrev',
+      'btnNext',
+      'btnBlack',
+      'btnLogo',
+      'btnFontUp',
+      'btnFontDown',
+      'btnPlayVid',
+      'btnPauseVid',
+      'btnVideoContain',
+      'btnVideoCover',
+      'btnVideoFull',
+    ].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.disabled = state.role === 'observer';
+    });
     var label = transport && transport.connected
       ? state.role === 'observer'
         ? 'Observando'
         : state.youControl
           ? 'Você controla'
-          : 'Outro aparelho controla'
+          : 'Outro aparelho controla — toque Assumir comando'
       : 'Desconectado';
     setStatus(
       $('appStatus'),
       label + (baseUrl ? ' · ' + baseUrl.replace(/^https?:\/\//, '') : ''),
-      transport && transport.connected ? 'ok' : 'bad'
+      transport && transport.connected ? (state.youControl || state.role === 'observer' ? 'ok' : '') : 'bad'
     );
   }
 
   function gotoSlide(i) {
-    if (!transport || !state.youControl) {
-      if (transport) transport.takeControl();
-      return;
-    }
-    state.slideIndex = i;
-    transport.send('changeSlide', i);
-    renderSlides();
+    ensureControl(function () {
+      state.slideIndex = i;
+      sendCmd('changeSlide', i);
+      renderSlides();
+    });
   }
 
   function buildLogoSlide() {
-    return '<section><h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>';
+    // Align with desktop telaPadrao + backlay logo ICM
+    return (
+      '<section data-background="' +
+      BG_DEFAULT +
+      '" data-state="show_backlay1">' +
+      '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+      '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>'
+    );
   }
+
+  LOGO_SLIDE_HTML = buildLogoSlide();
 
   function projectHtml(html) {
-    state.slidesHtml = html;
-    state.slideIndex = 0;
-    if (transport && state.youControl) {
-      transport.send('reloadReveal', html);
-      transport.send('changeSlide', 0);
-    }
-    renderSlides();
+    ensureControl(function () {
+      state.slidesHtml = html || '';
+      state.slideIndex = 0;
+      sendCmd('reloadReveal', state.slidesHtml);
+      sendCmd('changeSlide', 0);
+      sendCmd('hidePairing', true);
+      renderSlides();
+      showTab('live');
+    });
   }
 
-  var videoBgSrc = null;
-
   function songToHtml(song) {
-    var title = song.name || song.text || 'Louvor';
-    var content = song.content || song.data && song.data.content || '';
-    var parts = String(content).split(/\n\s*\n/);
-    var bgAttr = videoBgSrc
-      ? ' data-background-video="' + escapeHtml(videoBgSrc) + '" data-background-video-loop data-background-size="contain"'
-      : '';
+    var title = song.name || song.text || song.title || 'Louvor';
+    var content = song.content || (song.data && song.data.content) || '';
+    var sid = String(title)
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 24) || 'song';
+    var parts = String(content).split(/\n\n/);
+    var bgBase = videoBgSrc
+      ? ' data-background-video="' +
+        escapeAttr(videoBgSrc) +
+        '" data-background-video-loop data-background-size="contain"'
+      : ' data-background="' + BG_DEFAULT + '"';
     var html = '';
-    parts.forEach(function (part, idx) {
-      var body = part.trim().replace(/\n/g, '<br>');
-      if (!body) return;
-      if (idx === 0) {
+    var verseCount = 0;
+    parts.forEach(function (part, j) {
+      var estrofeEsp = part.trim().replace(/\n/g, '<br>');
+      if (!estrofeEsp) return;
+      var fimState = '';
+      var fimStyle = '';
+      // last non-empty handled below after loop — compute later
+      var stateId = 'm' + sid + '_' + j;
+      if (j === 0 || verseCount === 0) {
+        var titleEsc = String(title).replace(/"/g, '\\"');
         html +=
           '<section' +
-          bgAttr +
-          ' data-state="showtitle"><h3>' +
-          escapeHtml(title) +
-          '</h3><p>' +
-          body +
-          '</p></section>';
+          bgBase +
+          ' data-state="showtitle' +
+          stateId +
+          '">' +
+          '\n<style>\n.showtitle' +
+          stateId +
+          ' header.winetitle{ display: table; }\n.showtitle' +
+          stateId +
+          ' header.winetitle #logo{ display: table; }\n.showtitle' +
+          stateId +
+          ' header.winetitle #titulo:after { content: "' +
+          titleEsc +
+          '"; }\n</style>\n' +
+          estrofeEsp +
+          '\n</section>\n';
       } else {
-        html += '<section' + bgAttr + '><p>' + body + '</p></section>';
+        html +=
+          '<section' +
+          bgBase +
+          ' data-state="showlogo' +
+          stateId +
+          '" data-background-transition="none">' +
+          '\n<style>\n.showlogo' +
+          stateId +
+          ' header.whitelogo{ display: block; }\n.showlogo' +
+          stateId +
+          ' header.whitelogo #logo{ display: block; }</style>\n' +
+          estrofeEsp +
+          '\n</section>\n';
       }
+      verseCount++;
     });
-    if (!html) html = '<section' + bgAttr + '><h3>' + escapeHtml(title) + '</h3></section>';
+    if (!html) {
+      html =
+        '<section' +
+        bgBase +
+        '><h3>' +
+        escapeHtml(title) +
+        '</h3></section>\n';
+    }
+    // Closing default screen like desktop
+    html +=
+      '<section data-background="' +
+      BG_DEFAULT +
+      '" data-state="show_backlay1">' +
+      '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+      '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>\n';
     return html;
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  function videoSlide(src, title, opts) {
+    opts = opts || {};
+    var fit = opts.fit || state.videoFit || 'contain';
+    var full = opts.fullscreen != null ? opts.fullscreen : state.videoFullscreen;
+    var cls = 'video-slide' + (full ? ' video-fullscreen' : '');
+    var titleHtml = full ? '' : '<h3 class="video-title">' + escapeHtml(title || 'Vídeo') + '</h3>';
+    return (
+      '<section class="' +
+      cls +
+      '" data-video-src="' +
+      escapeAttr(src) +
+      '" data-video-fit="' +
+      escapeAttr(fit) +
+      '">' +
+      titleHtml +
+      '<video src="' +
+      escapeAttr(src) +
+      '" playsinline ' +
+      (full ? '' : 'controls ') +
+      'class="proj-video" style="object-fit:' +
+      escapeAttr(fit) +
+      '"></video></section>'
+    );
   }
 
-  function videoSlide(src, title) {
-    return (
-      '<section class="video-slide" data-video-src="' +
-      escapeHtml(src) +
-      '"><h3>' +
-      escapeHtml(title || 'Vídeo') +
-      '</h3><video src="' +
-      escapeHtml(src) +
-      '" playsinline controls style="max-width:100%;max-height:80vh;object-fit:contain"></video></section>'
-    );
+  function applyVideoFit(fit, fullscreen) {
+    ensureControl(function () {
+      if (fit) state.videoFit = fit;
+      if (fullscreen != null) state.videoFullscreen = !!fullscreen;
+      sendCmd('setVideoFit', {
+        fit: state.videoFit,
+        fullscreen: state.videoFullscreen,
+      });
+      // If current slides are a single video, rebuild for consistency
+      var m = state.slidesHtml && state.slidesHtml.match(/data-video-src="([^"]+)"/);
+      if (m) {
+        var src = m[1].replace(/&amp;/g, '&');
+        var titleMatch = state.slidesHtml.match(/class="video-title"[^>]*>([^<]*)</);
+        var title = titleMatch ? titleMatch[1] : 'Vídeo';
+        var html = videoSlide(src, title, {
+          fit: state.videoFit,
+          fullscreen: state.videoFullscreen,
+        });
+        state.slidesHtml = html;
+        state.slideIndex = 0;
+        sendCmd('reloadReveal', html);
+        sendCmd('changeSlide', 0);
+        sendCmd('playVideo', { src: src });
+        renderSlides();
+      }
+    });
   }
 
   function renderPlaylist() {
@@ -195,11 +359,15 @@
       div.addEventListener('click', function () {
         if (item.type === 'video') {
           projectHtml(videoSlide(item.src, item.title));
-          if (state.youControl) transport.send('playVideo', { src: item.src, currentTime: 0 });
+          ensureControl(function () {
+            sendCmd('playVideo', { src: item.src, currentTime: 0 });
+          });
         } else if (item.html) {
           projectHtml(item.html);
         } else if (item.song) {
           projectHtml(songToHtml(item.song));
+        } else if (item.type === 'logo') {
+          projectHtml(buildLogoSlide());
         }
       });
       var rm = document.createElement('button');
@@ -218,13 +386,14 @@
   }
 
   function syncPlaylist() {
-    if (!transport || !state.youControl) return;
-    transport.send('playlistUpdate', state.playlist);
-    fetch(baseUrl + '/api/playlist', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playlist: state.playlist }),
-    }).catch(function () {});
+    ensureControl(function () {
+      sendCmd('playlistUpdate', state.playlist);
+      fetch(baseUrl + '/api/playlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playlist: state.playlist }),
+      }).catch(function () {});
+    });
   }
 
   function flattenLibrary(data) {
@@ -292,12 +461,12 @@
           escapeHtml(s.folder) +
           '</small>';
         div.addEventListener('click', function () {
-          var item = { type: 'song', title: s.name, song: s, html: songToHtml(s) };
+          var html = songToHtml(s);
+          var item = { type: 'song', title: s.name, song: s, html: html };
           state.playlist.push(item);
           syncPlaylist();
           renderPlaylist();
-          projectHtml(item.html);
-          showTab('live');
+          projectHtml(html);
         });
         box.appendChild(div);
       });
@@ -311,7 +480,6 @@
       .then(function (data) {
         state.library = data;
         renderLibrary($('libSearch').value);
-        if (transport && state.youControl) transport.send('libraryUpdate', data);
       })
       .catch(function () {
         $('libraryBox').innerHTML = '<p class="status bad">Falha ao carregar data.json</p>';
@@ -336,7 +504,9 @@
             syncPlaylist();
             renderPlaylist();
             projectHtml(videoSlide(v.src, v.name));
-            showTab('live');
+            ensureControl(function () {
+              sendCmd('playVideo', { src: v.src, currentTime: 0 });
+            });
           });
           var bg = document.createElement('button');
           bg.className = 'secondary';
@@ -344,7 +514,7 @@
           bg.addEventListener('click', function (e) {
             e.stopPropagation();
             videoBgSrc = v.src;
-            alert('Próximo louvor usará este vídeo de fundo (Reveal background-video).');
+            alert('Próximo louvor usará este vídeo de fundo.');
           });
           box.appendChild(btn);
           box.appendChild(bg);
@@ -384,10 +554,12 @@
     });
     transport.on('welcome', function (data) {
       state.youControl = !!data.youControl;
+      if (state.youControl) flushControlWaiters();
       updateControlUi();
     });
     transport.on('controlChanged', function (data) {
       state.youControl = transport.clientId === data.controllerId;
+      if (state.youControl) flushControlWaiters();
       updateControlUi();
     });
     transport.on('stateSnapshot', function (snap) {
@@ -397,12 +569,17 @@
       state.playlist = snap.playlist || [];
       if (snap.library) state.library = snap.library;
       if (snap.displayProfile) $('displayProfile').value = snap.displayProfile;
+      if (snap.video) {
+        if (snap.video.fit) state.videoFit = snap.video.fit;
+        if (snap.video.fullscreen != null) state.videoFullscreen = !!snap.video.fullscreen;
+      }
       renderSlides();
       renderPlaylist();
       updateControlUi();
     });
     transport.on('reloadReveal', function (html) {
       state.slidesHtml = html || '';
+      state.slideIndex = 0;
       renderSlides();
     });
     transport.on('changeSlide', function (i) {
@@ -413,6 +590,11 @@
       state.playlist = pl || [];
       renderPlaylist();
     });
+    transport.on('setVideoFit', function (data) {
+      if (!data) return;
+      if (data.fit) state.videoFit = data.fit;
+      if (data.fullscreen != null) state.videoFullscreen = !!data.fullscreen;
+    });
     transport.on('error', function (err) {
       setStatus($('connectStatus'), (err && err.message) || 'Erro', 'bad');
       setStatus($('appStatus'), (err && err.message) || 'Erro', 'bad');
@@ -420,8 +602,8 @@
     transport.on('close', function () {
       updateControlUi();
     });
-    transport.on('webrtc-signal', function (data, msg) {
-      handleSignal(data, msg);
+    transport.on('webrtc-signal', function (data) {
+      handleSignal(data);
     });
   }
 
@@ -444,7 +626,6 @@
     });
   }
 
-  // WebRTC
   function ensurePc() {
     if (pc) return pc;
     pc = new RTCPeerConnection({
@@ -459,8 +640,7 @@
   }
 
   function handleSignal(data) {
-    if (!data || state.role === 'view') return;
-    // Controllers only send; views consume — ignore remote offers on mobile unless answering
+    if (!data) return;
     if (data.type === 'answer' && pc) {
       pc.setRemoteDescription(data.sdp).catch(function () {});
     } else if (data.type === 'candidate' && pc && data.candidate) {
@@ -469,66 +649,66 @@
   }
 
   async function startCameraStream() {
-    if (!state.youControl) {
-      transport.takeControl();
-      return;
-    }
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: true,
-      });
-      var conn = ensurePc();
-      localStream.getTracks().forEach(function (t) {
-        conn.addTrack(t, localStream);
-      });
-      var offer = await conn.createOffer();
-      await conn.setLocalDescription(offer);
-      transport.send('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
-      transport.send('streamStarted', {});
-    } catch (e) {
-      alert('WebRTC falhou: ' + (e.message || e) + '\nUse o upload de vídeo como alternativa.');
-    }
+    ensureControl(async function () {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: true,
+        });
+        var conn = ensurePc();
+        localStream.getTracks().forEach(function (t) {
+          conn.addTrack(t, localStream);
+        });
+        var offer = await conn.createOffer();
+        await conn.setLocalDescription(offer);
+        sendCmd('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
+        sendCmd('streamStarted', {});
+      } catch (e) {
+        alert('WebRTC falhou: ' + (e.message || e) + '\nUse o upload de vídeo.');
+      }
+    });
   }
 
   async function startFileStream(file) {
-    if (!state.youControl) return;
-    try {
-      var url = URL.createObjectURL(file);
-      var video = document.createElement('video');
-      video.src = url;
-      video.muted = true;
-      video.playsInline = true;
-      await video.play();
-      if (!video.captureStream && !video.mozCaptureStream) {
-        throw new Error('captureStream não suportado');
-      }
-      localStream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-      var conn = ensurePc();
-      localStream.getTracks().forEach(function (t) {
-        conn.addTrack(t, localStream);
-      });
-      var offer = await conn.createOffer();
-      await conn.setLocalDescription(offer);
-      transport.send('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
-      transport.send('streamStarted', {});
-    } catch (e) {
-      // Fallback: upload + playVideo
-      var fd = new FormData();
-      fd.append('file', file);
-      fetch(baseUrl + '/api/media/upload?to=tmp', { method: 'POST', body: fd })
-        .then(function (r) {
-          return r.json();
-        })
-        .then(function (res) {
-          projectHtml(videoSlide(res.src, file.name));
-          transport.send('playVideo', { src: res.src, currentTime: 0 });
-          alert('Stream WebRTC indisponível — vídeo enviado e projetado via upload.');
-        })
-        .catch(function () {
-          alert('Falha no stream e no upload: ' + (e.message || e));
+    ensureControl(async function () {
+      try {
+        var url = URL.createObjectURL(file);
+        var video = document.createElement('video');
+        video.src = url;
+        video.muted = true;
+        video.playsInline = true;
+        await video.play();
+        if (!video.captureStream && !video.mozCaptureStream) {
+          throw new Error('captureStream não suportado');
+        }
+        localStream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+        var conn = ensurePc();
+        localStream.getTracks().forEach(function (t) {
+          conn.addTrack(t, localStream);
         });
-    }
+        var offer = await conn.createOffer();
+        await conn.setLocalDescription(offer);
+        sendCmd('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
+        sendCmd('streamStarted', {});
+      } catch (e) {
+        var fd = new FormData();
+        fd.append('file', file);
+        fetch(baseUrl + '/api/media/upload?to=tmp', { method: 'POST', body: fd })
+          .then(function (r) {
+            return r.json();
+          })
+          .then(function (res) {
+            projectHtml(videoSlide(res.src, file.name));
+            ensureControl(function () {
+              sendCmd('playVideo', { src: res.src, currentTime: 0 });
+            });
+            alert('Stream indisponível — vídeo enviado e projetado.');
+          })
+          .catch(function () {
+            alert('Falha no stream e no upload: ' + (e.message || e));
+          });
+      }
+    });
   }
 
   function stopStream() {
@@ -542,10 +722,9 @@
       pc.close();
       pc = null;
     }
-    if (transport) transport.send('streamStopped', {});
+    if (transport) sendCmd('streamStopped', {});
   }
 
-  // QR scan using BarcodeDetector when available; else prompt
   async function scanQr() {
     var video = $('qrVideo');
     if (!window.BarcodeDetector) {
@@ -583,17 +762,16 @@
           });
           video.style.display = 'none';
           var raw = codes[0].rawValue;
-          var u = new URL(raw);
-          $('hostInput').value = u.host;
-          var pin = u.searchParams.get('pin');
-          if (pin) $('pinInput').value = pin;
+          var u2 = new URL(raw);
+          $('hostInput').value = u2.host;
+          var pin2 = u2.searchParams.get('pin');
+          if (pin2) $('pinInput').value = pin2;
           $('btnConnect').click();
         }
       } catch (_) {}
     }, 600);
   }
 
-  // Events
   $('btnConnect').addEventListener('click', function () {
     connectTo($('hostInput').value, $('pinInput').value, $('roleSelect').value);
   });
@@ -651,27 +829,34 @@
     if (transport) transport.takeControl();
   });
   $('btnShowPairing').addEventListener('click', function () {
-    if (transport) transport.send('showPairing', true);
+    ensureControl(function () {
+      sendCmd('showPairing', true);
+    });
   });
   $('btnBlack').addEventListener('click', function () {
-    if (transport) transport.send('clearProjection', true);
+    ensureControl(function () {
+      sendCmd('clearProjection', true);
+    });
   });
   $('btnLogo').addEventListener('click', function () {
     projectHtml(buildLogoSlide());
-    if (transport) transport.send('showLogo', true);
   });
   $('btnFontDown').addEventListener('click', function () {
-    state.fontSize = Math.max(1, Number(state.fontSize) - 0.5);
-    if (transport) transport.send('changeFontSize', state.fontSize);
+    ensureControl(function () {
+      state.fontSize = Math.max(1, Number(state.fontSize) - 0.5);
+      sendCmd('changeFontSize', state.fontSize);
+    });
   });
   $('btnFontUp').addEventListener('click', function () {
-    state.fontSize = Math.min(6, Number(state.fontSize) + 0.5);
-    if (transport) transport.send('changeFontSize', state.fontSize);
+    ensureControl(function () {
+      state.fontSize = Math.min(6, Number(state.fontSize) + 0.5);
+      sendCmd('changeFontSize', state.fontSize);
+    });
   });
   $('displayProfile').addEventListener('change', function () {
-    if (transport && state.youControl) {
-      transport.send('setDisplayProfile', $('displayProfile').value);
-    }
+    ensureControl(function () {
+      sendCmd('setDisplayProfile', $('displayProfile').value);
+    });
   });
   $('btnDisconnect').addEventListener('click', function () {
     stopStream();
@@ -703,17 +888,39 @@
         syncPlaylist();
         renderPlaylist();
         projectHtml(videoSlide(res.src, res.name));
+        ensureControl(function () {
+          sendCmd('playVideo', { src: res.src, currentTime: 0 });
+        });
       })
       .catch(function () {
         alert('Falha no upload');
       });
   });
   $('btnPlayVid').addEventListener('click', function () {
-    if (transport) transport.send('playVideo', {});
+    ensureControl(function () {
+      sendCmd('playVideo', {});
+    });
   });
   $('btnPauseVid').addEventListener('click', function () {
-    if (transport) transport.send('pauseVideo', {});
+    ensureControl(function () {
+      sendCmd('pauseVideo', {});
+    });
   });
+  if ($('btnVideoContain')) {
+    $('btnVideoContain').addEventListener('click', function () {
+      applyVideoFit('contain', false);
+    });
+  }
+  if ($('btnVideoCover')) {
+    $('btnVideoCover').addEventListener('click', function () {
+      applyVideoFit('cover', false);
+    });
+  }
+  if ($('btnVideoFull')) {
+    $('btnVideoFull').addEventListener('click', function () {
+      applyVideoFit('cover', true);
+    });
+  }
   $('btnStartStream').addEventListener('click', function () {
     startCameraStream().catch(function (e) {
       alert(e.message || 'Câmera indisponível');
@@ -724,20 +931,20 @@
   });
   $('streamFile').addEventListener('change', function () {
     var f = $('streamFile').files[0];
-    if (f) startFileStream(f).catch(function (e) {
-      alert(e.message || 'Falha no stream');
-    });
+    if (f) {
+      startFileStream(f).catch(function (e) {
+        alert(e.message || 'Falha no stream');
+      });
+    }
   });
   $('btnStopStream').addEventListener('click', stopStream);
 
-  // Boot from querystring (QR)
   (function boot() {
     renderHistory();
     var pin = qs('pin');
     if (pin) $('pinInput').value = pin;
     if (location.protocol.indexOf('http') === 0 && location.hostname && location.hostname !== 'localhost') {
       $('hostInput').value = location.host;
-      // Same origin — auto connect
       connectTo(location.origin, $('pinInput').value, $('roleSelect').value);
     } else {
       var hist = ProjectionDiscovery.loadHistory();

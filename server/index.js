@@ -129,6 +129,7 @@ const CONTROL_FUNCTIONS = new Set([
   'showPairing',
   'hidePairing',
   'setDisplayProfile',
+  'setVideoFit',
   'playlistUpdate',
   'libraryUpdate',
   'playVideo',

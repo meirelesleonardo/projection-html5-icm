@@ -67,9 +67,20 @@
       var transport = null;
       var pc = null;
       var pairingTimer = null;
+      var videoFit = 'contain';
+      var videoFullscreen = false;
+
+      var DEFAULT_LOGO_HTML =
+        '<section data-background="imagens/fundo.jpg" data-state="show_backlay1">' +
+        '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+        '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>';
 
       function changeSlide(number) {
-        Reveal.slide(number, number, number);
+        try {
+          Reveal.slide(Number(number) || 0);
+        } catch (e) {
+          console.warn('changeSlide', e);
+        }
       }
 
       function changeBg(fileURL) {
@@ -85,30 +96,50 @@
         $('.reveal').css('font-size', size + 'vw');
       }
 
-      function reloadReveal(htmlslides) {
+      function applyVideoStyles() {
+        var root = document.querySelector('.reveal');
+        if (root) {
+          root.setAttribute('data-video-fit', videoFit);
+          root.classList.toggle('video-fs-active', !!videoFullscreen);
+        }
+        document.querySelectorAll('.slides video, .slides .proj-video').forEach(function (v) {
+          v.setAttribute('playsinline', '');
+          v.style.objectFit = videoFit;
+          var section = v.closest('section');
+          if (section) {
+            section.classList.toggle('video-fullscreen', !!videoFullscreen);
+            section.classList.add('video-slide');
+          }
+          if (videoFullscreen) {
+            v.style.maxWidth = 'none';
+            v.style.maxHeight = 'none';
+            v.style.width = '100%';
+            v.style.height = '100%';
+          } else {
+            v.style.maxWidth = '100%';
+            v.style.maxHeight = '85vh';
+            v.style.width = '';
+            v.style.height = '';
+          }
+        });
+      }
+
+      function reloadReveal(htmlslides, slideIndex) {
         hideStream();
         $('.reveal').removeClass('cleared');
+        setPairingVisible(false);
         $('.slides').html(htmlslides || '');
-        Reveal.initialize({
-          controls: false,
-          progress: false,
-          history: false,
-          keyboard: true,
-          theme: Reveal.getQueryHash().theme,
-          transition: 'fade',
-          width: Reveal.getConfig().width,
-          height: Reveal.getConfig().height,
-          margin: 0.04,
-        });
-        Reveal.sync();
-        changeSlide(0);
-        var v = document.querySelector('.slides video');
-        if (v) {
-          v.setAttribute('playsinline', '');
-          v.style.maxWidth = '100%';
-          v.style.maxHeight = '85vh';
-          v.style.objectFit = 'contain';
+        try {
+          Reveal.sync();
+        } catch (e) {
+          console.warn('Reveal.sync', e);
         }
+        changeSlide(slideIndex != null ? slideIndex : 0);
+        applyVideoStyles();
+      }
+
+      function showDefaultLogo() {
+        reloadReveal(DEFAULT_LOGO_HTML, 0);
       }
 
       function setPairingVisible(visible) {
@@ -145,7 +176,7 @@
       function handleMessage(data) {
         if (!data || data.host !== 'projection-html5') return;
         var fn = data.function;
-        if (fn === 'reloadReveal') reloadReveal(data.data);
+        if (fn === 'reloadReveal') reloadReveal(data.data, 0);
         if (fn === 'changeSlide') changeSlide(data.data);
         if (fn === 'changeBg') changeBg(data.data);
         if (fn === 'changeTheme') changeTheme(data.data);
@@ -155,24 +186,38 @@
         }
         if (fn === 'showLogo') {
           $('.reveal').removeClass('cleared');
+          if (typeof data.data === 'string' && data.data.indexOf('<section') !== -1) {
+            reloadReveal(data.data, 0);
+          } else {
+            showDefaultLogo();
+          }
         }
         if (fn === 'showPairing') setPairingVisible(true);
         if (fn === 'hidePairing') setPairingVisible(false);
         if (fn === 'setDisplayProfile') applyDisplayProfile(data.data);
+        if (fn === 'setVideoFit') {
+          if (data.data) {
+            if (data.data.fit) videoFit = data.data.fit;
+            if (data.data.fullscreen != null) videoFullscreen = !!data.data.fullscreen;
+          }
+          applyVideoStyles();
+        }
         if (fn === 'playVideo') {
           var v = document.querySelector('.slides video');
           if (data.data && data.data.src) {
             if (!v) {
               reloadReveal(
-                '<section><video src="' +
+                '<section class="video-slide"><video class="proj-video" src="' +
                   data.data.src +
-                  '" playsinline style="max-width:100%;max-height:85vh;object-fit:contain"></video></section>'
+                  '" playsinline></video></section>',
+                0
               );
               v = document.querySelector('.slides video');
             } else {
               v.src = data.data.src;
             }
           }
+          applyVideoStyles();
           if (v) {
             if (data.data && data.data.currentTime != null) v.currentTime = data.data.currentTime;
             v.play().catch(function () {});
@@ -192,24 +237,25 @@
           if (snap.displayProfile) applyDisplayProfile(snap.displayProfile);
           if (snap.theme) changeTheme(snap.theme);
           if (snap.fontSize != null) changeFontSize(snap.fontSize);
-          if (snap.slidesHtml) {
-            reloadReveal(snap.slidesHtml);
-            changeSlide(snap.slideIndex || 0);
+          if (snap.video) {
+            if (snap.video.fit) videoFit = snap.video.fit;
+            if (snap.video.fullscreen != null) videoFullscreen = !!snap.video.fullscreen;
           }
-          setPairingVisible(snap.pairingVisible);
+          if (snap.slidesHtml) {
+            reloadReveal(snap.slidesHtml, snap.slideIndex || 0);
+          }
+          setPairingVisible(!!snap.pairingVisible && !snap.slidesHtml);
           if (snap.cleared) $('.reveal').addClass('cleared');
+          if (snap.logo && !snap.slidesHtml) showDefaultLogo();
         }
         if (fn === 'controlChanged') {
-          setPairingVisible(!!(data.data && data.data.pairingVisible));
-        }
-        if (fn === 'networkInfo') {
-          /* pairing refresh handles IPs */
+          if (data.data && data.data.pairingVisible) setPairingVisible(true);
+          else setPairingVisible(false);
         }
         if (fn === 'webrtc-signal') handleWebRtc(data.data);
         if (fn === 'streamStopped') hideStream();
       }
 
-      // Legacy postMessage
       window.addEventListener('message', function (event) {
         try {
           handleMessage(JSON.parse(event.data));
@@ -239,8 +285,8 @@
         });
         pc.ontrack = function (ev) {
           var layer = document.getElementById('remoteVideoLayer');
-          var v = document.getElementById('remoteVideo');
-          v.srcObject = ev.streams[0];
+          var rv = document.getElementById('remoteVideo');
+          rv.srcObject = ev.streams[0];
           layer.classList.add('active');
           setPairingVisible(false);
         };
@@ -272,9 +318,8 @@
         transport = new ProjectionTransport({
           role: 'view',
           name: 'projector',
-          pin: (Reveal.getQueryHash().pin || new URLSearchParams(location.search).get('pin') || ''),
+          pin: '',
         });
-        // View also needs PIN from config — fetch pairing first
         fetch('/api/pairing')
           .then(function (r) { return r.json(); })
           .then(function (info) {

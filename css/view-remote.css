@@ -82,6 +82,45 @@
   visibility: hidden;
 }
 
+/* Video projection fit modes */
+.reveal .slides section.video-slide {
+  padding: 0 !important;
+}
+.reveal .slides section.video-slide .proj-video,
+.reveal .slides section.video-slide video {
+  max-width: 100%;
+  max-height: 85vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  background: #000;
+}
+.reveal .slides section.video-slide.video-fullscreen {
+  width: 100% !important;
+  height: 100% !important;
+}
+.reveal .slides section.video-slide.video-fullscreen .video-title {
+  display: none !important;
+}
+.reveal .slides section.video-slide.video-fullscreen .proj-video,
+.reveal .slides section.video-slide.video-fullscreen video {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  object-fit: cover;
+}
+.reveal[data-video-fit="contain"] .slides section.video-slide.video-fullscreen .proj-video,
+.reveal[data-video-fit="contain"] .slides section.video-slide.video-fullscreen video {
+  object-fit: contain;
+}
+.reveal[data-video-fit="cover"] .slides section.video-slide .proj-video,
+.reveal[data-video-fit="cover"] .slides section.video-slide video {
+  object-fit: cover;
+}
+
 .reveal[data-display-profile="720p"] {
   /* hint for CSS; JS also sets Reveal size */
 }
