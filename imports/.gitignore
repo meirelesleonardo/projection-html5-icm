@@ -1,0 +1,9 @@
+# Staging gerado pelo pipeline; não versionar artefatos grandes
+extracted/
+normalized/
+review/
+approved/
+rejected/
+reports/
+incoming/*
+!incoming/.gitkeep

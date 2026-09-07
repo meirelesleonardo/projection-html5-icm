@@ -58,14 +58,17 @@ FONTES (TXT | DOCX | PDF | PPTX)
 
 O PPTX é uma **fonte** (às vezes com excelente layout), não o modelo da base.
 
-## Status da Fase 0
+## Status da Fase 0 + implementação do pipeline
 
 | Item | Estado |
 |------|--------|
 | Diagnóstico documentado | Feito |
 | Specs em `docs/louvor/` | Feito |
 | Skills `.cursor/skills/louvor-*` | Feito |
-| Código do importador | **Não iniciado** (aguardando validação) |
-| Alteração em `data/data.json` | **Nenhuma** |
+| CLI `tools/louvor-import/` | Feito (extract/normalize/validate/duplicates/staging) |
+| Amostra PPTX 2022 → `imports/` | Feito (`npm run louvor:sample-2022`) |
+| Merge em `data/data.json` | **Não realizado** (só após revisão explícita) |
 
-**Próximo passo (após sua validação):** implementar IR + extractors com amostra do PPTX 2022 — ainda sem merge na base oficial.
+**Comandos:** ver [`tools/louvor-import/README.md`](../../tools/louvor-import/README.md).
+
+**Próximo passo:** revisar `imports/approved/` e `imports/review/`, depois merge manual/aprovado da pasta Coletânea 2022.
