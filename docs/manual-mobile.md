@@ -23,7 +23,7 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 ## Operação
 
 - **Ao vivo:** anterior / próximo, tap no slide; **Logo / padrão** interrompe qualquer fluxo (vídeo, louvor, stream) e mostra a tela Maranata. Com vídeo projetado, aparecem pause / ±10s / contain / cover / tela cheia / **Som** / **Mudo**.
-- **Lista:** itens do culto; toque para **transmitir**. Use **↑ / ↓** para reordenar e **Remover** para tirar da lista.
+- **Lista:** itens do culto; toque para **transmitir**. Use **↑ / ↓** para reordenar e **Remover** para tirar da lista. Esta lista é **compartilhada** com o painel desktop (`index.html`): o que um adiciona ou remove aparece no outro (via servidor). Itens de vídeo/deck feitos no celular também aparecem no desktop (só leitura na árvore; podem ser removidos da fila).
 - **Louvores:** busca na biblioteca oficial do servidor (`GET /api/library`); toque **só adiciona à lista** (não transmite). Edição de louvores no mobile fica para etapa futura — use o painel desktop + **Salvar no servidor**.
 - **Bíblia:** escolha versão (ACF/NVI), livro, capítulo e versículos; **Adicionar à lista**. Projete pela Lista.
 - **Slides:** envie `.pptx` ou `.pdf`; o PC converte (LibreOffice + pdftoppm) em imagens. **Adicionar à lista** ou **Projetar**; navegue no Ao vivo com anterior/próximo.
@@ -34,6 +34,8 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
   - **Transmitir câmera** / arquivo (WebRTC): exige **HTTPS**; senão use upload.
   - Contain / Cover (só enquadramento) / Tela cheia / **Som** / **Mudo**.
 - **Mais:** assumir comando, QR no projetor, tela preta, logo, fonte, perfil 720p/1080p, **Tela cheia View** / **Sair tela cheia**, **Limpar sessão**.
+
+Só um dispositivo **controla** a View por vez (celular ou desktop). Se o desktop estiver no comando, use **Assumir comando** no mobile (e vice-versa).
 
 Se o celular **bloquear** ou sair do navegador no meio do culto, o projetor **não volta ao QR**: vai para a **tela logo / padrão**. O QR só aparece no início (sala vazia) ou quando você toca **QR no projetor**.
 

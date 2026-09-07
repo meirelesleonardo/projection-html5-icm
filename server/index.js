@@ -325,6 +325,10 @@ app.post('/api/media/rename', (req, res) => {
   }
 });
 
+app.get('/api/playlist', (req, res) => {
+  res.json({ playlist: Array.isArray(room.state.playlist) ? room.state.playlist : [] });
+});
+
 app.post('/api/playlist', (req, res) => {
   const playlist = Array.isArray(req.body) ? req.body : req.body.playlist || [];
   room.state.playlist = playlist;

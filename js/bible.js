@@ -181,8 +181,12 @@ $('#addBibleToProjection').click(function(){
       return;
     }
     var biblia = { b: bookSelected, c: chapterSelected, from: fromSelected, to: toSelected, type: "b" }
-    projecao.push(biblia);
-    reloadProjectionList();
+    if (typeof addDesktopProjectionItem === 'function') {
+      addDesktopProjectionItem(biblia);
+    } else {
+      projecao.push(biblia);
+      reloadProjectionList();
+    }
   });
 });
 

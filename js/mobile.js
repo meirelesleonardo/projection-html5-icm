@@ -508,9 +508,53 @@
           projectHtml(item.html);
         } else if (item.song) {
           projectHtml(songToHtml(item.song));
+        } else if (
+          item.type === 'song' &&
+          item.folderId != null &&
+          item.id != null &&
+          state.library &&
+          state.library[item.folderId] &&
+          state.library[item.folderId].songs &&
+          state.library[item.folderId].songs[item.id]
+        ) {
+          var libSong = state.library[item.folderId].songs[item.id];
+          projectHtml(
+            songToHtml({
+              name: libSong.title || item.title,
+              title: libSong.title || item.title,
+              content: libSong.content || '',
+            })
+          );
         } else if (item.type === 'deck' && item.slides) {
           projectHtml(deckToHtml(item.slides, item.title));
-        } else if (item.type === 'logo' || item.type === 'bible') {
+        } else if (item.type === 'bible') {
+          if (item.html) {
+            projectHtml(item.html);
+          } else if (item.bible || (item.b != null && item.c != null)) {
+            var bb = item.bible || item;
+            if (typeof MobileBible !== 'undefined' && MobileBible.scriptureToHtml) {
+              var closing =
+                '<section data-background="' +
+                BG_DEFAULT +
+                '" data-state="show_backlay1">' +
+                '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+                '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>\n';
+              projectHtml(
+                MobileBible.scriptureToHtml({
+                  version: bb.version || 'acf',
+                  b: bb.b,
+                  c: bb.c,
+                  from: bb.from,
+                  to: bb.to,
+                  bg: BG_DEFAULT,
+                  closingHtml: closing,
+                })
+              );
+            }
+          } else {
+            projectHtml(buildLogoSlide());
+          }
+        } else if (item.type === 'logo') {
           projectHtml(item.html || buildLogoSlide());
         }
       });

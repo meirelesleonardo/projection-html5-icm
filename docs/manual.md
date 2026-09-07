@@ -35,6 +35,8 @@ O painel desktop possui 5 áreas principais para controlar a projeção como mos
 > **Modo LAN / celular:** para controlar a projeção a partir do Android (hotspot + mini PC Zorin), use o servidor (`npm start`) e o [manual mobile](manual-mobile.md). Instalação: [install-zorin.md](install-zorin.md).
 >
 > **Biblioteca oficial:** abra o painel em `http://IP:3080/index.html`. Edite e use **Salvar no servidor** (ou Salvar na aba Edição, que também grava no servidor). O botão **Exportar backup** só gera um arquivo para cópia de segurança — não substitui mais o fluxo normal de persistência. Se o navegador tiver uma cópia antiga em `localStorage` diferente do servidor, um aviso pedirá para escolher qual usar.
+>
+> **Lista de projeção compartilhada:** a lista à direita do desktop e a **Lista** do celular são a mesma fila no servidor (`/api/playlist`). Alterações em um painel aparecem no outro. Para enviar slides à View/projetor pelo desktop, use **Assumir comando** (barra superior) se o status mostrar “Sem comando”; com o comando, duplo clique / Ao vivo atualizam o projetor e o preview juntos.
 
 1. __Menu__: No menu superior é possível ver a versão atual, mudar o idioma, importar ou exportar os arquivos de louvores, criar avisos e trocar a imagem de fundo da projeção.
 2. __Arquivos__: Nesta área lateral ficam todos os louvores separados por pastas, assim como imagens e avisos que podem ser adicionados a lista para projeção. Há botões para inserir novos louvores, pastas, imagens com também a possibilidade de excluí-los. Possui também uma pesquisa dinâmica, que procura pelo titulo ou conteúdo do louvor.

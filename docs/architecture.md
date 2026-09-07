@@ -54,6 +54,19 @@ Funções principais: `hello`, `reloadReveal`, `changeSlide`, `changeTheme`, `ch
 
 O relay guarda o último snapshot: slides HTML, índice, tema, fonte, playlist, quem tem o comando, perfil de display. Novos clientes recebem `stateSnapshot` no `hello`.
 
+### Fila de culto vs slides na tela
+
+| Conceito | Onde vive | API / evento |
+|----------|-----------|--------------|
+| **Fila do culto** (lista de itens a projetar) | `room.state.playlist` | `GET/POST /api/playlist`, WS `playlistUpdate` |
+| **O que está na tela** | `room.state.slidesHtml` + `slideIndex` | WS `reloadReveal` / `changeSlide` |
+
+Desktop (`#projections` / `sharedPlaylist`) e mobile (`state.playlist`) compartilham a mesma fila. O formato canônico é o do mobile (`song`, `bible`, `image`, `warning`, `video`, `deck`, …). O desktop mapeia `s`/`b`/`i`/`w` para esses tipos; itens só-mobile (vídeo/deck) aparecem na lista desktop como linhas informativas e são preservados no round-trip.
+
+A biblioteca de louvores continua em `GET/PUT /api/library` (não confundir com a playlist do culto).
+
+O painel desktop, em modo HTTP, usa `ensureDesktopControl` antes de `reloadReveal`/`hidePairing` (paridade com o mobile), para o projetor e o preview do `index` atualizarem juntos via broadcast WS.
+
 ## Biblioteca de louvores (fonte da verdade no servidor)
 
 Em modo LAN (`http(s)://`), o documento oficial é `data/data.json` no mini PC.

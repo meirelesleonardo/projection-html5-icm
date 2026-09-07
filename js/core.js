@@ -22,6 +22,203 @@ var libraryServerMode = location.protocol.indexOf('http') === 0;
 var _pendingServerLibrary = null;
 var _pendingLocalLibrary = null;
 
+/** Shared projection queue (desktop ↔ mobile via room.state.playlist). */
+var sharedPlaylist = [];
+var applyingRemotePlaylist = false;
+var playlistSyncTimer = null;
+var playlistReadyToSync = false;
+var desktopControlWaiters = [];
+var lastReloadRevealOk = null;
+
+function escapeProjectionLabel(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Desktop row (s/b/i/w) → canonical playlist item. */
+function projecaoItemToPlaylist(item) {
+  if (!item) return item;
+  if (item.type === 's') {
+    var title = 'Louvor';
+    try {
+      if (dados[item.folderId] && dados[item.folderId].songs && dados[item.folderId].songs[item.id]) {
+        title = dados[item.folderId].songs[item.id].title || title;
+      }
+    } catch (e) {}
+    return { type: 'song', folderId: item.folderId, id: item.id, title: title };
+  }
+  if (item.type === 'b') {
+    var bTitle = 'Bíblia';
+    try {
+      if (typeof bible !== 'undefined' && bible && bible[item.b]) {
+        bTitle =
+          bible[item.b].name +
+          ' ' +
+          (item.c + 1) +
+          ':' +
+          (item.from + 1) +
+          (item.from < item.to ? '-' + (item.to + 1) : '');
+      }
+    } catch (e) {}
+    return {
+      type: 'bible',
+      title: bTitle,
+      b: item.b,
+      c: item.c,
+      from: item.from,
+      to: item.to,
+      version: item.version,
+      bible: { b: item.b, c: item.c, from: item.from, to: item.to, version: item.version },
+    };
+  }
+  if (item.type === 'i') {
+    var imgName = (imagens[item.id] && imagens[item.id].name) || 'Imagem';
+    return { type: 'image', id: item.id, title: imgName, name: imgName };
+  }
+  if (item.type === 'w') {
+    var warnName = (avisos[item.id] && avisos[item.id].name) || 'Aviso';
+    return { type: 'warning', id: item.id, title: warnName, name: warnName };
+  }
+  return item;
+}
+
+/** Canonical playlist item → desktop row (preserves video/deck/html round-trip). */
+function playlistItemToDesktopRow(item) {
+  if (!item) return item;
+  if (item.type === 's' || item.type === 'b' || item.type === 'i' || item.type === 'w') return item;
+  if (item.type === 'song') {
+    if (item.folderId != null && item.id != null) {
+      return { type: 's', folderId: item.folderId, id: item.id };
+    }
+    return item;
+  }
+  if (item.type === 'bible') {
+    var b = item.bible || item;
+    return {
+      type: 'b',
+      b: b.b,
+      c: b.c,
+      from: b.from,
+      to: b.to,
+      version: b.version != null ? b.version : item.version,
+    };
+  }
+  if (item.type === 'image') return { type: 'i', id: item.id };
+  if (item.type === 'warning') return { type: 'w', id: item.id };
+  return item;
+}
+
+function deriveProjecaoFromShared() {
+  projecao = (sharedPlaylist || []).map(playlistItemToDesktopRow);
+}
+
+function applyRemotePlaylist(pl) {
+  applyingRemotePlaylist = true;
+  sharedPlaylist = Array.isArray(pl) ? pl.slice() : [];
+  deriveProjecaoFromShared();
+  reloadProjectionList({ generate: false, sync: false });
+  applyingRemotePlaylist = false;
+  playlistReadyToSync = true;
+}
+
+function syncDesktopPlaylistNow() {
+  if (applyingRemotePlaylist) return;
+  if (!playlistReadyToSync) return;
+  if (location.protocol.indexOf('http') !== 0) return;
+  ensureDesktopControl(function () {
+    var t = window.projectionNet;
+    if (t && typeof t.send === 'function') {
+      t.send('playlistUpdate', sharedPlaylist);
+    }
+    fetch('/api/playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlist: sharedPlaylist }),
+    }).catch(function () {});
+  });
+}
+
+function scheduleSyncDesktopPlaylist() {
+  if (!playlistReadyToSync) return;
+  if (playlistSyncTimer) clearTimeout(playlistSyncTimer);
+  playlistSyncTimer = setTimeout(function () {
+    playlistSyncTimer = null;
+    syncDesktopPlaylistNow();
+  }, 150);
+}
+
+function addDesktopProjectionItem(desktopItem) {
+  playlistReadyToSync = true;
+  sharedPlaylist.push(projecaoItemToPlaylist(desktopItem));
+  deriveProjecaoFromShared();
+  reloadProjectionList({ generate: true, sync: true, fromShared: true });
+}
+
+function flushDesktopControlWaiters() {
+  var queue = desktopControlWaiters.slice();
+  desktopControlWaiters = [];
+  queue.forEach(function (fn) {
+    try {
+      fn();
+    } catch (e) {
+      console.error(e);
+    }
+  });
+}
+
+/** Wait until desktop has control, then run fn (parity with mobile ensureControl). */
+function ensureDesktopControl(fn) {
+  var t = window.projectionNet;
+  if (!t || !t.connected) {
+    updateDesktopControlStatus();
+    return;
+  }
+  if (t.youControl || (t.clientId && t.clientId === t.controllerId)) {
+    t.youControl = true;
+    fn();
+    return;
+  }
+  desktopControlWaiters.push(fn);
+  updateDesktopControlStatus();
+  if (typeof t.takeControl === 'function') t.takeControl();
+  setTimeout(function () {
+    if (!desktopControlWaiters.length) return;
+    if (t.youControl || (t.clientId && t.clientId === t.controllerId)) {
+      t.youControl = true;
+      flushDesktopControlWaiters();
+    } else {
+      desktopControlWaiters = [];
+      updateDesktopControlStatus();
+    }
+  }, 800);
+}
+
+function updateDesktopControlStatus() {
+  var el = document.getElementById('desktopControlStatus');
+  if (!el) return;
+  var t = window.projectionNet;
+  if (!t || !t.connected) {
+    el.textContent = 'Desconectado';
+    el.style.color = '#f66';
+    return;
+  }
+  if (t.youControl) {
+    if (lastReloadRevealOk === false) {
+      el.textContent = 'No comando (View: falha)';
+      el.style.color = '#fc6';
+    } else {
+      el.textContent = 'No comando';
+      el.style.color = '#8f8';
+    }
+  } else {
+    el.textContent = desktopControlWaiters.length ? 'Assumindo comando…' : 'Sem comando';
+    el.style.color = '#fc6';
+  }
+}
+
 function setLibrarySyncStatus(text, kind) {
   var el = document.getElementById('librarySyncStatus');
   if (!el) return;
@@ -436,41 +633,73 @@ function atualizaListasFromJSON(newData){
     reloadProjectionList();
 }
 
-function reloadProjectionList(){
+function reloadProjectionList(opts){
+  opts = opts || {};
+  var doGenerate = opts.generate !== false;
+  var doSync = opts.sync !== false && !applyingRemotePlaylist;
+
+  if (!applyingRemotePlaylist && opts.fromShared !== true) {
+    // Callers that only mutate sharedPlaylist already derived; keep in sync
+    deriveProjecaoFromShared();
+  }
+
   if(projecao.length == 0){
     $("#no-projection-msg").show();
   } else {
     $("#no-projection-msg").hide();
   }
   $("#projections tbody").html("");
-  $.each(projecao, function(i, item) {     
-    if(item.type == "s") $('#projections tbody').append('<tr data-id="'+i+'"><td>'+dados[item.folderId].songs[item.id].title+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');
-    if(item.type == "b") {
-      var label = (bible && bible[item.b])
+  $.each(projecao, function(i, item) {
+    if(item.type == "s") {
+      var songTitle = 'Louvor';
+      try {
+        if (dados[item.folderId] && dados[item.folderId].songs && dados[item.folderId].songs[item.id]) {
+          songTitle = dados[item.folderId].songs[item.id].title;
+        }
+      } catch (e) {}
+      $('#projections tbody').append('<tr data-id="'+i+'"><td>'+escapeProjectionLabel(songTitle)+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');
+    } else if(item.type == "b") {
+      var label = (typeof bible !== 'undefined' && bible && bible[item.b])
         ? (bible[item.b].name+" "+(item.c+1)+":"+(item.from+1) + (item.from < item.to ? "-" + (item.to+1) : ""))
         : ("Bíblia " + (item.b + 1) + ":" + (item.c + 1));
-      $('#projections tbody').append('<tr data-id="'+i+'"><td>'+label+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');           
-    }
-    if(item.type == "i") {
+      $('#projections tbody').append('<tr data-id="'+i+'"><td>'+escapeProjectionLabel(label)+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');
+    } else if(item.type == "i") {
       var imagem = imagens[item.id];
-      $('#projections tbody').append('<tr data-id="'+i+'"><td><i class="fas fa-image"></i>&nbsp;'+imagem.name+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');           
-    }
-    if(item.type == "w") {
+      var imgLabel = (imagem && imagem.name) || ('Imagem ' + item.id);
+      $('#projections tbody').append('<tr data-id="'+i+'"><td><i class="fas fa-image"></i>&nbsp;'+escapeProjectionLabel(imgLabel)+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');
+    } else if(item.type == "w") {
       var aviso = avisos[item.id];
-      $('#projections tbody').append('<tr data-id="'+i+'"><td><i class="fas fa-exclamation-triangle"></i>&nbsp;'+aviso.name+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');           
+      var warnLabel = (aviso && aviso.name) || ('Aviso ' + item.id);
+      $('#projections tbody').append('<tr data-id="'+i+'"><td><i class="fas fa-exclamation-triangle"></i>&nbsp;'+escapeProjectionLabel(warnLabel)+'</td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>');
+    } else {
+      var remoteTitle = item.title || item.name || (item.song && (item.song.name || item.song.title)) || item.type || 'Item';
+      var icon = item.type === 'video' ? 'fa-video' : item.type === 'deck' ? 'fa-images' : 'fa-mobile-alt';
+      $('#projections tbody').append(
+        '<tr data-id="'+i+'"><td><i class="fas '+icon+'"></i>&nbsp;'+escapeProjectionLabel(remoteTitle)+
+        ' <small class="text-muted">(compartilhado)</small></td><td class="btn-mini"><button class="btn btn-danger btn-x">-</button></td></tr>'
+      );
     }
-  });  
-  $(".btn-x").click(function(){
-    var id = $(this).closest('tr').attr("data-id");
-    projecao.splice(id, 1);
-    reloadProjectionList();
   });
-  $("#projections tbody tr td:first-child").click(function(){
+  $(".btn-x").off('click').click(function(){
+    var id = parseInt($(this).closest('tr').attr("data-id"), 10);
+    if (isNaN(id)) return;
+    playlistReadyToSync = true;
+    sharedPlaylist.splice(id, 1);
+    deriveProjecaoFromShared();
+    reloadProjectionList({ generate: true, sync: true, fromShared: true });
+  });
+  $("#projections tbody tr td:first-child").off('click').click(function(){
       var goto = parseInt($(this).attr("data-goto"));
+      if (isNaN(goto)) return;
       projecaoAtiva = goto;
-      mudaProjecaoAtiva();      
+      mudaProjecaoAtiva();
   });
-  generateLiveList(); 
+  if (doGenerate) {
+    generateLiveList();
+  }
+  if (doSync) {
+    scheduleSyncDesktopPlaylist();
+  }
 }
 
 $("#btnAbrirConf").click(function(){   
@@ -828,21 +1057,39 @@ function postToProjectionViews(fn, data) {
 }
 
 function sendProjectionNet(fn, data) {
-  var t = window.projectionNet;
-  if (!t || typeof t.send !== 'function') return false;
-  // Painel desktop assume o comando ao projetar (mesma ideia do mobile)
-  if (typeof t.takeControl === 'function') t.takeControl();
-  return t.send(fn, data);
+  ensureDesktopControl(function () {
+    var t = window.projectionNet;
+    if (!t || typeof t.send !== 'function') return;
+    t.send(fn, data);
+  });
+  return true;
 }
 
 function updateViewSlides(){
   postToProjectionViews('reloadReveal', viewSlides);
-  sendProjectionNet('reloadReveal', viewSlides);
+  ensureDesktopControl(function () {
+    var t = window.projectionNet;
+    if (!t || typeof t.send !== 'function') {
+      lastReloadRevealOk = false;
+      updateDesktopControlStatus();
+      return;
+    }
+    var ok = t.send('reloadReveal', viewSlides);
+    lastReloadRevealOk = !!ok;
+    if (ok) {
+      t.send('hidePairing', true);
+    }
+    updateDesktopControlStatus();
+  });
 }
 
 function mudaSlide(){
   postToProjectionViews('changeSlide', projecaoAtiva);
-  sendProjectionNet('changeSlide', projecaoAtiva);
+  ensureDesktopControl(function () {
+    var t = window.projectionNet;
+    if (!t || typeof t.send !== 'function') return;
+    t.send('changeSlide', projecaoAtiva);
+  });
 }
 
 $(document).on('keydown', function(e) {
@@ -950,9 +1197,6 @@ function startProjection() {
 
   // A view avisa "opened"; reforça slides após o WebSocket conectar
   setTimeout(function () {
-    if (window.projectionNet && window.projectionNet.takeControl) {
-      window.projectionNet.takeControl();
-    }
     updateViewSlides();
     mudaSlide();
   }, 600);
@@ -1101,23 +1345,17 @@ $(function () {
       node = instance.get_node(e.target);
      // Do my action
      if(node.data != null && node.type == 'song'){
-      var louvor = { id: louvorAtivo, folderId: pastaAtiva, type: "s" }
-      projecao.push(louvor);
-      reloadProjectionList();
+      addDesktopProjectionItem({ id: louvorAtivo, folderId: pastaAtiva, type: "s" });
      }
 
      if(node.data != null && node.type == 'image'){
       var idImage = node.id.split("_")[1];
-      var imagem = { id: idImage, type: "i" }
-      projecao.push(imagem);
-      reloadProjectionList();
+      addDesktopProjectionItem({ id: idImage, type: "i" });
      }
 
      if(node.data != null && node.type == 'warning'){
       var idWarning = node.id.split("_")[1];
-      var warning = { id: idWarning, type: "w" }
-      projecao.push(warning);
-      reloadProjectionList();
+      addDesktopProjectionItem({ id: idWarning, type: "w" });
      }
   });
 
@@ -1448,22 +1686,19 @@ setTimeout(hideLoadingOverlay, 8000);
   if (typeof ProjectionTransport === 'undefined') return;
   if (location.protocol.indexOf('http') !== 0) return;
 
-  function updateDesktopControlStatus() {
-    var el = document.getElementById('desktopControlStatus');
-    if (!el) return;
-    var t = window.projectionNet;
-    if (!t || !t.connected) {
-      el.textContent = 'Desconectado';
-      el.style.color = '#f66';
-      return;
-    }
-    if (t.youControl) {
-      el.textContent = 'No comando';
-      el.style.color = '#8f8';
-    } else {
-      el.textContent = 'Sem comando';
-      el.style.color = '#fc6';
-    }
+  function loadSharedPlaylistFromApi() {
+    fetch('/api/playlist', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && Array.isArray(data.playlist)) {
+          applyRemotePlaylist(data.playlist);
+        } else {
+          playlistReadyToSync = true;
+        }
+      })
+      .catch(function () {
+        playlistReadyToSync = true;
+      });
   }
 
   fetch('/api/pairing')
@@ -1477,22 +1712,42 @@ setTimeout(hideLoadingOverlay, 8000);
       t.on('open', function () {
         console.log('[projectionNet] connected as admin');
         updateDesktopControlStatus();
+        loadSharedPlaylistFromApi();
       });
       t.on('close', function () {
         updateDesktopControlStatus();
       });
       t.on('welcome', function (data) {
-        if (data && !data.youControl) t.takeControl();
+        if (data && data.youControl) {
+          t.youControl = true;
+          flushDesktopControlWaiters();
+        }
         updateDesktopControlStatus();
       });
       t.on('controlChanged', function (data) {
         if (data && t.clientId && data.controllerId === t.clientId) {
           t.youControl = true;
+          flushDesktopControlWaiters();
+        } else {
+          t.youControl = false;
         }
         updateDesktopControlStatus();
       });
+      t.on('stateSnapshot', function (snap) {
+        if (snap && Array.isArray(snap.playlist)) {
+          applyRemotePlaylist(snap.playlist);
+        }
+      });
+      t.on('playlistUpdate', function (pl) {
+        applyRemotePlaylist(pl);
+      });
       t.on('error', function (data) {
-        if (data && data.code === 'no_control') t.takeControl();
+        if (data && data.code === 'no_control') {
+          if (typeof t.takeControl === 'function') t.takeControl();
+        }
+        if (data && data.code === 'no_control') {
+          lastReloadRevealOk = false;
+        }
         updateDesktopControlStatus();
       });
       t.connect();
@@ -1502,13 +1757,23 @@ setTimeout(hideLoadingOverlay, 8000);
       var btn = document.getElementById('btnTakeControlDesktop');
       if (btn) {
         btn.addEventListener('click', function () {
-          if (!window.projectionNet) return;
-          window.projectionNet.takeControl();
-          setTimeout(function () {
+          if (!window.projectionNet) {
+            updateDesktopControlStatus();
+            return;
+          }
+          if (!window.projectionNet.connected) {
+            updateDesktopControlStatus();
+            alert('Desconectado do servidor. Verifique a rede e recarregue o painel.');
+            return;
+          }
+          ensureDesktopControl(function () {
+            if (!viewSlides || !String(viewSlides).trim()) {
+              generateLiveList();
+            }
             updateViewSlides();
             mudaSlide();
             updateDesktopControlStatus();
-          }, 200);
+          });
         });
       }
     })
