@@ -76,7 +76,15 @@ function suggestLibraryNameFromFile(filename) {
     .replace(/\s+/g, ' ')
     .trim();
   // "01.COLETÂNEA IGREJAS-2022 PROJETOR-4.3" → try to find year
-  const year = base.match(/(20\d{2})/);
+  let year = base.match(/(20\d{2})/);
+  if (!year) {
+    // Rev_31.12.22 → 2022
+    const short = base.match(/\b(\d{2})\.(\d{2})\.(\d{2})\b/);
+    if (short) year = [null, `20${short[3]}`];
+  }
+  if (/avulsos/i.test(base)) {
+    return year ? `Louvores Avulsos ${year[1]}` : 'Louvores Avulsos';
+  }
   if (/colet[aâ]nea/i.test(base) && year) {
     return `Coletânea ${year[1]}`;
   }

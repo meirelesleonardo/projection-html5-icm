@@ -90,6 +90,115 @@ function isNavOnly(line) {
   return /^[ií]ndice$/i.test(line.trim());
 }
 
+const MARKER_LINE_RE =
+  /^(CORO(?:\s*\(\d+\s*X\))?|BIS(?:\s*\(\d+\s*X\))?|FINAL:?|FINALE:?|INSTRUMENTOS)\s*$/i;
+
+function isMarkerLine(line) {
+  return MARKER_LINE_RE.test(String(line || '').trim()) || isNavOnly(line);
+}
+
+function looksLikeTitle(line) {
+  const t = String(line || '').trim();
+  if (!t || isMarkerLine(t)) return false;
+  if (t.length > 55) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length > 10) return false;
+  // Lyric cadence: trailing punctuation on a longer phrase
+  if (/[,;.:!?]$/.test(t) && (t.length > 20 || words.length > 4)) return false;
+  return true;
+}
+
+/**
+ * Pick title from the first slide of an unnumbered song.
+ * Prefer a short last line (footer-style), else a short first line.
+ */
+function detectUnnumberedTitle(lines) {
+  const body = (lines || [])
+    .map((l, i) => ({ text: String(l).trim(), index: i }))
+    .filter((x) => x.text && !isNavOnly(x.text) && !isMarkerLine(x.text));
+
+  if (!body.length) {
+    return { titleRaw: 'Sem título', index: -1, needsReview: true };
+  }
+
+  const first = body[0];
+  const last = body[body.length - 1];
+  const lastOk = looksLikeTitle(last.text);
+  const firstOk = looksLikeTitle(first.text);
+
+  if (lastOk && last.index !== first.index) {
+    // Footer title only when the opener looks like a lyric line (long / not title-like)
+    const lastIsFooter =
+      last.text.length < first.text.length &&
+      (first.text.length > 35 || !firstOk);
+    if (lastIsFooter) {
+      return { titleRaw: last.text, index: last.index, needsReview: false };
+    }
+  }
+  if (firstOk) {
+    return { titleRaw: first.text, index: first.index, needsReview: false };
+  }
+  if (lastOk) {
+    return { titleRaw: last.text, index: last.index, needsReview: false };
+  }
+  return { titleRaw: first.text, index: first.index, needsReview: true };
+}
+
+function slideHasIndexMarker(lines) {
+  return (lines || []).some((l) => isNavOnly(l));
+}
+
+/**
+ * Segment slides using "Índice" as end-of-song marker (avulsos / unnumbered decks).
+ */
+function segmentSongsByIndexMarker(slideRecords) {
+  const songs = [];
+  let bucket = [];
+
+  function flush() {
+    if (!bucket.length) return;
+    const first = bucket[0];
+    const title = detectUnnumberedTitle(first.lines);
+    const slides = bucket.map((rec, slideIdx) => {
+      let lines = (rec.lines || []).filter((l) => !isNavOnly(l));
+      if (slideIdx === 0 && title.index >= 0) {
+        // Remove title line from first slide body (match by original index among all lines)
+        const orig = rec.lines || [];
+        const titleText = orig[title.index];
+        let removed = false;
+        lines = lines.filter((l) => {
+          if (!removed && l === titleText) {
+            removed = true;
+            return false;
+          }
+          return true;
+        });
+      }
+      return {
+        lines,
+        sourceSlideIndex: rec.index,
+        warnings: rec.warnings || [],
+      };
+    });
+
+    songs.push({
+      number: null,
+      titleRaw: title.titleRaw,
+      slides,
+      needsReview: Boolean(title.needsReview),
+    });
+    bucket = [];
+  }
+
+  for (const rec of slideRecords) {
+    if (rec.skip) continue;
+    bucket.push(rec);
+    if (slideHasIndexMarker(rec.lines)) flush();
+  }
+  flush();
+  return songs;
+}
+
 function normalizeTitle(t) {
   return String(t || '')
     .toUpperCase()
@@ -97,6 +206,14 @@ function normalizeTitle(t) {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function deckHasNumberedTitles(slideRecords) {
+  for (const rec of slideRecords) {
+    if (rec.skip) continue;
+    if (detectTitleLine(rec.lines)) return true;
+  }
+  return false;
 }
 
 /**
@@ -153,6 +270,17 @@ function segmentSongs(slideRecords) {
 }
 
 /**
+ * Prefer numbered segmentation; fall back to Índice-marker segmentation for avulsos.
+ */
+function segmentSongsAuto(slideRecords) {
+  if (deckHasNumberedTitles(slideRecords)) {
+    const numbered = segmentSongs(slideRecords);
+    if (numbered.length) return numbered;
+  }
+  return segmentSongsByIndexMarker(slideRecords);
+}
+
+/**
  * Full PPTX extraction → RawDocument + CanonicalSongs (structured mode).
  */
 function extractPptx(filePath, options = {}) {
@@ -189,7 +317,7 @@ function extractPptx(filePath, options = {}) {
       rawSlides.push({ index: idx, lines, skip, warnings });
     }
 
-    let segmented = segmentSongs(slideRecords);
+    let segmented = segmentSongsAuto(slideRecords);
     if (onlyNumbers) {
       segmented = segmented.filter((s) => onlyNumbers.has(s.number));
     }
@@ -214,10 +342,12 @@ function extractPptx(filePath, options = {}) {
       for (const sl of slides) {
         if ((sl.lines || []).length > 9) densityWarnings.push('slide denso (>9 linhas)');
       }
+      const warnings = densityWarnings.slice();
+      if (seg.needsReview) warnings.push('título sem número — revisar');
 
       return createCanonicalSong({
         titleRaw: seg.titleRaw,
-        number: seg.number,
+        number: seg.number != null ? seg.number : null,
         collectionHint: collection,
         source: {
           type: 'pptx',
@@ -233,8 +363,8 @@ function extractPptx(filePath, options = {}) {
             slideIndexes: slides.map((s) => s.sourceSlideIndex),
           },
         },
-        needsReview: densityWarnings.length > 0,
-        warnings: densityWarnings,
+        needsReview: densityWarnings.length > 0 || Boolean(seg.needsReview),
+        warnings,
       });
     });
 
@@ -258,5 +388,8 @@ module.exports = {
   extractPptx,
   extractTextFromSlideXml,
   segmentSongs,
+  segmentSongsByIndexMarker,
+  segmentSongsAuto,
   detectTitleLine,
+  detectUnnumberedTitle,
 };

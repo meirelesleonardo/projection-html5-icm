@@ -42,6 +42,14 @@ describe('numbering', () => {
     );
   });
 
+  it('suggests Louvores Avulsos YEAR from filename', () => {
+    assert.equal(
+      suggestLibraryNameFromFile('LOUVORES AVULSOS_Rev_31.12.22.pptx'),
+      'Louvores Avulsos 2022'
+    );
+    assert.equal(suggestLibraryNameFromFile('avulsos.pptx'), 'Louvores Avulsos');
+  });
+
   it('normalizes names', () => {
     assert.equal(normalizeName('Coletânea 2022'), normalizeName('COLETANEA  2022'));
   });
