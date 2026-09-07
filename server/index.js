@@ -62,7 +62,30 @@ if (useHttps) {
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 const room = new Room(config);
-const libraryStore = createLibraryStore({ rootDir: ROOT });
+const libraryStore = createLibraryStore({ rootDir: ROOT, maxBackups: 20 });
+const { createImportRepository } = require('./import/import-repository');
+const { createImportService } = require('./import/import-service');
+const importRepo = createImportRepository({ rootDir: ROOT });
+const importService = createImportService({ importRepo, libraryStore });
+
+const IMPORT_EXTS = /\.(pptx|ppt|pdf|docx|txt)$/i;
+const importUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, file, cb) {
+      const dest = path.join(mediaDir, 'tmp');
+      fs.mkdirSync(dest, { recursive: true });
+      cb(null, dest);
+    },
+    filename(req, file, cb) {
+      cb(null, uniqueMediaName(path.join(mediaDir, 'tmp'), file.originalname));
+    },
+  }),
+  limits: { fileSize: 200 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    if (IMPORT_EXTS.test(file.originalname)) cb(null, true);
+    else cb(new Error('Use .pptx, .ppt, .pdf, .docx ou .txt'));
+  },
+});
 
 /** Simple write rate limit: max 30 PUTs / minute / IP */
 const libraryWriteHits = new Map();
@@ -231,6 +254,120 @@ app.get('/api/library/backups', (req, res) => {
     return res.json({ backups: libraryStore.listBackups() });
   } catch (e) {
     return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/library/restore', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const result = importService.restoreBackup(req.body && req.body.backup, req.body && req.body.version);
+    setLibraryHeaders(res, result);
+    return res.json({ ok: true, version: result.version, updatedAt: result.updatedAt });
+  } catch (e) {
+    const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
+    return res.status(status).json({
+      error: e.message,
+      code: e.code || 'restore_error',
+      version: e.currentVersion,
+    });
+  }
+});
+
+app.post('/api/imports', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  importUpload.single('file')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message || 'upload inválido', code: 'upload' });
+    }
+    if (!req.file) return res.status(400).json({ error: 'file required' });
+    try {
+      const job = importService.startFromUpload({
+        originalName: req.file.originalname,
+        tempPath: req.file.path,
+        sourceSize: req.file.size,
+        libraryName: req.body && req.body.libraryName,
+        lang: (req.body && req.body.lang) || 'pt',
+        maxSlides: req.body && req.body.maxSlides ? Number(req.body.maxSlides) : undefined,
+      });
+      const detail = importService.getJobDetail(job.id);
+      return res.status(201).json(detail);
+    } catch (e) {
+      console.error('[imports] upload failed', e.message);
+      return res.status(e.status || 500).json({ error: e.message, code: e.code || 'import_error' });
+    }
+  });
+});
+
+app.get('/api/imports', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    return res.json({ imports: importService.listJobs() });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/imports/:id', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    return res.json(importService.getJobDetail(req.params.id));
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message, code: e.code });
+  }
+});
+
+app.patch('/api/imports/:id', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    return res.json(importService.patchJob(req.params.id, req.body || {}));
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message, code: e.code });
+  }
+});
+
+app.post('/api/imports/:id/analyze', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const preview = importService.analyze(req.params.id);
+    return res.json({ preview, job: importRepo.getJob(req.params.id) });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message, code: e.code });
+  }
+});
+
+app.post('/api/imports/:id/apply', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const result = importService.apply(req.params.id, {
+      expectedVersion: req.body && req.body.version,
+    });
+    setLibraryHeaders(res, { version: result.version, updatedAt: result.updatedAt, etag: String(result.version) });
+    return res.json(result);
+  } catch (e) {
+    const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
+    return res.status(status).json({
+      error: e.message,
+      code: e.code || 'apply_error',
+      version: e.currentVersion,
+      items: e.items,
+    });
+  }
+});
+
+app.post('/api/imports/:id/reject', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    return res.json({ job: importService.reject(req.params.id) });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message, code: e.code });
   }
 });
 

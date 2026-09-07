@@ -7,8 +7,8 @@
     "start": "node server/index.js",
     "start:https": "HTTPS=1 node server/index.js",
     "dev": "node server/index.js",
-    "test": "node --test server/library-store.test.js tools/louvor-import/test/*.test.js",
-    "louvor:test": "node --test tools/louvor-import/test/*.test.js",
+    "test": "node --test server/library-store.test.js server/import/test/*.test.js tools/louvor-import/test/*.test.js",
+    "louvor:test": "node --test tools/louvor-import/test/*.test.js server/import/test/*.test.js",
     "louvor:roundtrip": "node tools/louvor-import/cli.js roundtrip-check",
     "louvor:sample-2022": "node tools/louvor-import/cli.js sample-2022"
   },

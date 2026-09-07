@@ -39,8 +39,10 @@
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#" id="dropdown_init" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" data-lang-str="import_export">Importar/Exportar</a>
             <div class="dropdown-menu" aria-labelledby="dropdown_init">
-              <button id="import" class="dropdown-item" data-lang-str="btn_menu_import"><i class="fas fa-upload"></i> Importar...</button>
+              <button id="import" class="dropdown-item" data-lang-str="btn_menu_import"><i class="fas fa-upload"></i> Importar JSON...</button>
+              <button id="importCollection" class="dropdown-item" type="button"><i class="fas fa-file-import"></i> Importar coletânea...</button>
               <button id="export" class="dropdown-item" data-lang-str="btn_menu_export"><i class="fas fa-download"></i> Exportar...</button>
+              <button id="btnLibraryBackups" class="dropdown-item" type="button"><i class="fas fa-history"></i> Backups da biblioteca...</button>
             </div>
           </li>
           <li class="nav-item">
@@ -146,6 +148,90 @@
       </div>
     </div>
   </div>  
+  <div class="modal fade" id="collectionImportModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Importar coletânea</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div id="ciStepUpload">
+            <p class="text-muted mb-2">PPTX · PPT · PDF · DOCX · TXT — não edita <code>data.json</code> até você aprovar.</p>
+            <div class="border rounded p-4 text-center bg-light" id="ciDropZone">
+              <p class="mb-2">Arraste o arquivo aqui</p>
+              <input type="file" id="ciFileInput" accept=".pptx,.ppt,.pdf,.docx,.txt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/pdf,text/plain">
+              <p class="small text-muted mt-2 mb-0">Ou selecione pelo botão acima</p>
+            </div>
+            <div id="ciUploadStatus" class="mt-3 small"></div>
+          </div>
+          <div id="ciStepReview" style="display:none">
+            <div class="form-group">
+              <label for="ciLibraryName">Nome da biblioteca</label>
+              <input type="text" class="form-control" id="ciLibraryName">
+            </div>
+            <div class="form-row">
+              <div class="form-group col-md-4">
+                <label>Tipo</label>
+                <input type="text" class="form-control" id="ciType" value="s" readonly>
+              </div>
+              <div class="form-group col-md-4">
+                <label for="ciLang">Idioma</label>
+                <input type="text" class="form-control" id="ciLang" value="pt">
+              </div>
+              <div class="form-group col-md-4">
+                <label>Operação</label>
+                <input type="text" class="form-control" id="ciFolderOp" readonly>
+              </div>
+            </div>
+            <div id="ciStats" class="mb-2 small"></div>
+            <div class="table-responsive" style="max-height: 320px; overflow:auto">
+              <table class="table table-sm table-hover" id="ciSongsTable">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="ciSelectAll" checked title="Selecionar todos"></th>
+                    <th>Status</th>
+                    <th>Título</th>
+                    <th>Slides</th>
+                    <th>Ação</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div id="ciApplyResult" class="alert alert-success" style="display:none"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Fechar</button>
+          <button type="button" class="btn btn-outline-danger" id="ciRejectBtn" style="display:none">Rejeitar</button>
+          <button type="button" class="btn btn-primary" id="ciAnalyzeBtn" style="display:none">Atualizar preview</button>
+          <button type="button" class="btn btn-success" id="ciApplyBtn" style="display:none">Aprovar e aplicar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="modal fade" id="libraryBackupsModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Backups da biblioteca</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted">Restaurar substitui a biblioteca oficial pelo backup (gravação atômica + novo backup do estado atual).</p>
+          <ul class="list-group" id="ciBackupsList"></ul>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal fade" id="newImageModal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog" role="document">
       <div class="modal-content">
@@ -619,5 +705,6 @@
 <script src="js/langs.js"></script>
 <script src="js/transport.js"></script>
 <script src="js/core.js"></script>
+<script src="js/import-ui.js"></script>
 </body>
 </html>

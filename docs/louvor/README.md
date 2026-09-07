@@ -15,6 +15,7 @@ Documentação versionada do padrão de louvores da aplicação de projeção, d
 
 | Documento | Conteúdo |
 |-----------|----------|
+| [LIBRARY_MAINTENANCE.md](./LIBRARY_MAINTENANCE.md) | **Não editar data.json manualmente** — fluxo UI/API |
 | [LOUVOR_FORMAT_SPEC.md](./LOUVOR_FORMAT_SPEC.md) | Especificação do formato oficial `{title, content}` |
 | [ARCHITECTURE_PROPOSAL.md](./ARCHITECTURE_PROPOSAL.md) | IR intermediário, adapters, staging, relação com decks |
 | [IMPORT_PIPELINE_SPEC.md](./IMPORT_PIPELINE_SPEC.md) | Pipeline de importação, confiança, duplicatas, relatórios |
@@ -58,17 +59,15 @@ FONTES (TXT | DOCX | PDF | PPTX)
 
 O PPTX é uma **fonte** (às vezes com excelente layout), não o modelo da base.
 
-## Status da Fase 0 + implementação do pipeline
+## Status
 
 | Item | Estado |
 |------|--------|
-| Diagnóstico documentado | Feito |
-| Specs em `docs/louvor/` | Feito |
-| Skills `.cursor/skills/louvor-*` | Feito |
-| CLI `tools/louvor-import/` | Feito (extract/normalize/validate/duplicates/staging) |
-| Amostra PPTX 2022 → `imports/` | Feito (`npm run louvor:sample-2022`) |
-| Merge em `data/data.json` | **Não realizado** (só após revisão explícita) |
+| Specs / skills Fase 0 | Feito |
+| CLI `tools/louvor-import/` | Feito |
+| API `/api/imports*` + merge + apply | Feito |
+| UI desktop Importar coletânea | Feito |
+| Backups / restore | Feito |
+| Editar `data.json` manualmente | **Proibido** no fluxo normal — ver [LIBRARY_MAINTENANCE.md](./LIBRARY_MAINTENANCE.md) |
 
-**Comandos:** ver [`tools/louvor-import/README.md`](../../tools/louvor-import/README.md).
-
-**Próximo passo:** revisar `imports/approved/` e `imports/review/`, depois merge manual/aprovado da pasta Coletânea 2022.
+**Uso:** abra `index.html` via `http://…:3080`, menu **Importar/Exportar → Importar coletânea…**

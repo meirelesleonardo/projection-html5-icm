@@ -28,3 +28,14 @@ node tools/louvor-import/cli.js extract arquivo.txt --collection 2022
 - `pdftotext` (PDF) — pacote `poppler-utils`
 
 Sem pacotes npm extras.
+
+## API do servidor (workflow seguro)
+
+A UI desktop usa:
+
+- `POST /api/imports` — upload + staging em `data/imports/<id>/`
+- `PATCH /api/imports/:id` — nome, seleção, decisões de conflito
+- `POST /api/imports/:id/apply` — backup + merge + `saveAtomic` (PIN)
+- `POST /api/library/restore` — restaurar backup
+
+Ver [docs/louvor/LIBRARY_MAINTENANCE.md](../../docs/louvor/LIBRARY_MAINTENANCE.md).
