@@ -1,4 +1,4 @@
-const CACHE = 'projection-icm-shell-v7';
+const CACHE = 'projection-icm-shell-v9';
 const SHELL = [
   '/mobile.html',
   '/css/mobile.css',

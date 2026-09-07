@@ -48,6 +48,7 @@ Edite `server/config.json`:
 ```json
 {
   "port": 3080,
+  "https": false,
   "roomPin": "1234",
   "displayProfile": "1080p",
   "hostname": "projection-icm.local"
@@ -55,6 +56,8 @@ Edite `server/config.json`:
 ```
 
 Altere o `roomPin` para um código do culto. **Não use IP fixo.**
+
+Para **Transmitir câmera** do celular, ative HTTPS (`"https": true` ou `npm run start:https`). O Chrome no Android bloqueia câmera em `http://IP:…`. Aceite o certificado autoassinado uma vez no telefone. Exige `openssl` no PC (já comum no Zorin).
 
 ## 4. Firewall
 

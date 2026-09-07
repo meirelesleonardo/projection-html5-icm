@@ -1,5 +1,6 @@
 {
   "port": 3080,
+  "https": false,
   "mediaDir": "media",
   "displayProfile": "1080p",
   "roomPin": "1234",

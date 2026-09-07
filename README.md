@@ -21,8 +21,10 @@ O mini PC roda o servidor Node; o projetor mostra `view.html`; o Android usa `mo
 ```bash
 npm install
 npm start
-# View (projetor):  http://127.0.0.1:3080/view.html
-# Mobile:           http://<ip-do-pc>:3080/mobile.html
+# Câmera / WebRTC no celular:
+npm run start:https
+# View (projetor):  http(s)://127.0.0.1:3080/view.html
+# Mobile:           http(s)://<ip-do-pc>:3080/mobile.html
 ```
 
 Sem IP fixo: o projetor exibe **QR + IP** para pareamento no hotspot.

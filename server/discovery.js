@@ -30,10 +30,12 @@ function score(ip) {
 
 function buildInfo(config) {
   const ips = listLanIps();
+  const protocol = config.protocol === 'https' ? 'https' : 'http';
   return {
     name: config.serviceName || 'Projeção ICM',
     version: config.version || '2.0.0',
     port: config.port,
+    protocol,
     hostname: config.hostname || 'projection-icm.local',
     pinRequired: Boolean(config.roomPin),
     displayProfile: config.displayProfile || '1080p',
@@ -48,7 +50,8 @@ function buildInfo(config) {
 function pairingUrls(config) {
   const info = buildInfo(config);
   const pinQ = config.roomPin ? `?pin=${encodeURIComponent(config.roomPin)}` : '';
-  return info.ips.map((ip) => `http://${ip}:${config.port}/mobile.html${pinQ}`);
+  const protocol = info.protocol || 'http';
+  return info.ips.map((ip) => `${protocol}://${ip}:${config.port}/mobile.html${pinQ}`);
 }
 
 function startUdpBeacon(config) {

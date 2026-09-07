@@ -21,8 +21,9 @@ O servidor expõe como `/media/videos/meu-louvor.mp4`.
 
 ## Pelo celular
 
-Na aba **Mídia** → escolher arquivo → **Enviar para o PC**.
+Na aba **Mídia** → escolher arquivo(s) → **Enviar para o PC**.
 
+- No Android o navegador **não** abre uma pasta fixa (ex. `/Movies/Culto`) sozinho. Use o seletor → **Arquivos** / Pastas → navegue até a pasta → selecione um ou vários vídeos.
 - O arquivo é salvo com o **nome original** (caracteres especiais viram `_`).
 - Se já existir o mesmo nome: `louvor_2.mp4`, `louvor_3.mp4`, etc.
 - **Renomear** / **Apagar** na lista de vídeos.
@@ -30,10 +31,20 @@ Na aba **Mídia** → escolher arquivo → **Enviar para o PC**.
 
 Uploads temporários de fallback WebRTC vão para `media/tmp/`.
 
+## Transmitir câmera (WebRTC)
+
+Em HTTP puro na LAN o Chrome **bloqueia** a câmera. No PC:
+
+```bash
+npm run start:https
+```
+
+Abra o painel pelo QR/`https://IP:3080/mobile.html`, aceite o certificado uma vez, depois **Transmitir câmera**. Se falhar, use **Enviar para o PC** (mais estável no culto).
+
 ## Na playlist / projeção
 
 - **Projetar** adiciona à lista e exibe no projetor.
-- **Play** / **Pause**, **Contain** / **Cover** / **Tela cheia vídeo**.
+- **Play** / **Pause**, **Contain** / **Cover** (só enquadramento, sem reiniciar), **Tela cheia vídeo**.
 - O slide usa `<video>` com `object-fit` conforme o modo escolhido.
 
 ## Letras + vídeo de fundo

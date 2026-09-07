@@ -74,6 +74,8 @@
       var videoFit = 'contain';
       var videoFullscreen = false;
       var videoMuted = false;
+      var pendingIce = [];
+      var remoteDescSet = false;
 
       var DEFAULT_LOGO_HTML =
         '<section data-background="imagens/fundo.jpg" data-state="show_backlay1">' +
@@ -458,14 +460,37 @@
         layer.classList.remove('active');
         var v = document.getElementById('remoteVideo');
         v.srcObject = null;
+        pendingIce = [];
+        remoteDescSet = false;
         if (pc) {
-          pc.close();
+          try {
+            pc.close();
+          } catch (e) {}
           pc = null;
         }
       }
 
-      function ensurePc() {
+      function flushPendingIce(conn) {
+        if (!conn || !remoteDescSet) return;
+        var list = pendingIce.slice();
+        pendingIce = [];
+        list.forEach(function (c) {
+          conn.addIceCandidate(c).catch(function () {});
+        });
+      }
+
+      function ensurePc(forceNew) {
+        if (forceNew && pc) {
+          try {
+            pc.close();
+          } catch (e) {}
+          pc = null;
+          pendingIce = [];
+          remoteDescSet = false;
+        }
         if (pc) return pc;
+        pendingIce = [];
+        remoteDescSet = false;
         pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         });
@@ -473,6 +498,9 @@
           var layer = document.getElementById('remoteVideoLayer');
           var rv = document.getElementById('remoteVideo');
           rv.srcObject = ev.streams[0];
+          rv.playsInline = true;
+          var play = rv.play();
+          if (play && typeof play.catch === 'function') play.catch(function () {});
           layer.classList.add('active');
           setPairingVisible(false);
         };
@@ -486,16 +514,28 @@
 
       async function handleWebRtc(data) {
         if (!data) return;
-        var conn = ensurePc();
         if (data.type === 'offer') {
-          await conn.setRemoteDescription(data.sdp);
-          var answer = await conn.createAnswer();
-          await conn.setLocalDescription(answer);
-          transport.send('webrtc-signal', { type: 'answer', sdp: conn.localDescription });
-        } else if (data.type === 'candidate' && data.candidate) {
+          var conn = ensurePc(true);
           try {
-            await conn.addIceCandidate(data.candidate);
-          } catch (e) {}
+            await conn.setRemoteDescription(data.sdp);
+            remoteDescSet = true;
+            flushPendingIce(conn);
+            var answer = await conn.createAnswer();
+            await conn.setLocalDescription(answer);
+            if (transport) {
+              transport.send('webrtc-signal', { type: 'answer', sdp: conn.localDescription });
+            }
+          } catch (e) {
+            console.warn('handleWebRtc offer', e);
+          }
+        } else if (data.type === 'candidate' && data.candidate) {
+          if (!pc || !remoteDescSet) {
+            pendingIce.push(data.candidate);
+          } else {
+            try {
+              await pc.addIceCandidate(data.candidate);
+            } catch (e) {}
+          }
         }
       }
 

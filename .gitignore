@@ -3,6 +3,8 @@ media/tmp/*
 !media/tmp/.gitkeep
 media/videos/*
 !media/videos/.gitkeep
+server/certs/*.pem
+!server/certs/.gitkeep
 .DS_Store
 *.log
 .env

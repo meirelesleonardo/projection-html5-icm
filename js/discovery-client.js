@@ -28,7 +28,11 @@
   function normalizeBase(input) {
     var s = (input || '').trim();
     if (!s) return null;
-    if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
+    if (!/^https?:\/\//i.test(s)) {
+      var proto =
+        typeof location !== 'undefined' && location.protocol === 'https:' ? 'https://' : 'http://';
+      s = proto + s;
+    }
     try {
       var u = new URL(s);
       if (!u.port) u.port = String(DEFAULT_PORT);
@@ -72,6 +76,7 @@
       var b = normalizeBase(h);
       if (b) candidates.push(b);
     });
+    candidates.push('https://' + DEFAULT_HOSTNAME + ':' + port);
     candidates.push('http://' + DEFAULT_HOSTNAME + ':' + port);
     if (location.protocol.indexOf('http') === 0 && location.hostname) {
       candidates.push(location.origin);

@@ -17,6 +17,9 @@
   var slideCount = 0;
   var pc = null;
   var localStream = null;
+  var pendingIce = [];
+  var remoteDescSet = false;
+  var fileStreamVideo = null;
   var qrStream = null;
   var videoBgSrc = null;
   var controlWaiters = [];
@@ -441,7 +444,8 @@
 
   function projectVideo(src, title) {
     ensureControl(function () {
-      var html = videoSlide(src, title);
+      state._videoTitle = title || 'Vídeo';
+      var html = videoSlide(src, state._videoTitle);
       state.slidesHtml = html;
       state.slideIndex = 0;
       sendCmd('reloadReveal', html);
@@ -457,27 +461,25 @@
     ensureControl(function () {
       if (fit) state.videoFit = fit;
       if (fullscreen != null) state.videoFullscreen = !!fullscreen;
+      // Só estilos no projetor — não remonta o <video> (evita reinício)
       sendCmd('setVideoFit', {
         fit: state.videoFit,
         fullscreen: state.videoFullscreen,
       });
-      // If current slides are a single video, rebuild for consistency
+      // Atualiza HTML local (sessão/preview) sem reloadReveal no projetor
       var m = state.slidesHtml && state.slidesHtml.match(/data-video-src="([^"]+)"/);
       if (m) {
         var src = m[1].replace(/&amp;/g, '&');
         var titleMatch = state.slidesHtml.match(/class="video-title"[^>]*>([^<]*)</);
-        var title = titleMatch ? titleMatch[1] : 'Vídeo';
-        var html = videoSlide(src, title, {
+        if (titleMatch) state._videoTitle = titleMatch[1];
+        var title = state._videoTitle || 'Vídeo';
+        state.slidesHtml = videoSlide(src, title, {
           fit: state.videoFit,
           fullscreen: state.videoFullscreen,
         });
-        state.slidesHtml = html;
-        state.slideIndex = 0;
-        sendCmd('reloadReveal', html);
-        sendCmd('changeSlide', 0);
-        sendCmd('playVideo', { src: src });
         renderSlides();
       }
+      schedulePersist();
     });
   }
 
@@ -1297,8 +1299,45 @@
     });
   }
 
+  function setStreamStatus(msg, kind) {
+    var el = $('streamStatus');
+    if (!el) return;
+    setStatus(el, msg || '', kind || '');
+  }
+
+  function requireSecureMedia() {
+    if (window.isSecureContext === false) {
+      var hint = baseUrl
+        ? baseUrl.replace(/^http:/i, 'https:')
+        : 'https://IP-DO-PC:3080/mobile.html';
+      throw new Error(
+        'Câmera/WebRTC exige HTTPS.\nAbra o painel em:\n' +
+          hint +
+          '\n(No PC: npm run start:https — aceite o certificado no celular.)\nOu use Enviar vídeo.'
+      );
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error(
+        'Câmera indisponível neste navegador/contexto.\nUse HTTPS na LAN ou Enviar vídeo para o PC.'
+      );
+    }
+  }
+
+  function resetPeerConnection() {
+    pendingIce = [];
+    remoteDescSet = false;
+    if (pc) {
+      try {
+        pc.close();
+      } catch (_) {}
+      pc = null;
+    }
+  }
+
   function ensurePc() {
     if (pc) return pc;
+    pendingIce = [];
+    remoteDescSet = false;
     pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
     });
@@ -1307,90 +1346,165 @@
         transport.send('webrtc-signal', { type: 'candidate', candidate: ev.candidate });
       }
     };
+    pc.onconnectionstatechange = function () {
+      var st = pc && pc.connectionState;
+      if (st === 'connected') setStreamStatus('Stream conectado', 'ok');
+      else if (st === 'failed' || st === 'disconnected') setStreamStatus('Stream: ' + st, 'bad');
+      else if (st === 'connecting') setStreamStatus('Conectando stream…', '');
+    };
     return pc;
   }
 
+  function flushPendingIce() {
+    if (!pc || !remoteDescSet) return;
+    var list = pendingIce.slice();
+    pendingIce = [];
+    list.forEach(function (c) {
+      pc.addIceCandidate(c).catch(function () {});
+    });
+  }
+
   function handleSignal(data) {
-    if (!data) return;
-    if (data.type === 'answer' && pc) {
-      pc.setRemoteDescription(data.sdp).catch(function () {});
-    } else if (data.type === 'candidate' && pc && data.candidate) {
-      pc.addIceCandidate(data.candidate).catch(function () {});
+    if (!data || !pc) return;
+    if (data.type === 'answer') {
+      pc
+        .setRemoteDescription(data.sdp)
+        .then(function () {
+          remoteDescSet = true;
+          flushPendingIce();
+        })
+        .catch(function (e) {
+          console.warn('setRemoteDescription answer', e);
+        });
+    } else if (data.type === 'candidate' && data.candidate) {
+      if (!remoteDescSet) {
+        pendingIce.push(data.candidate);
+      } else {
+        pc.addIceCandidate(data.candidate).catch(function () {});
+      }
     }
   }
 
-  async function startCameraStream() {
-    ensureControl(async function () {
+  async function getCameraStream() {
+    requireSecureMedia();
+    var attempts = [
+      { video: { facingMode: { ideal: 'environment' } }, audio: true },
+      { video: { facingMode: 'environment' }, audio: false },
+      { video: true, audio: true },
+      { video: true, audio: false },
+    ];
+    var lastErr = null;
+    for (var i = 0; i < attempts.length; i++) {
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: true,
-        });
-        var conn = ensurePc();
-        localStream.getTracks().forEach(function (t) {
-          conn.addTrack(t, localStream);
-        });
-        var offer = await conn.createOffer();
-        await conn.setLocalDescription(offer);
-        sendCmd('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
-        sendCmd('streamStarted', {});
+        return await navigator.mediaDevices.getUserMedia(attempts[i]);
       } catch (e) {
-        alert('WebRTC falhou: ' + (e.message || e) + '\nUse o upload de vídeo.');
+        lastErr = e;
       }
+    }
+    throw lastErr || new Error('Não foi possível abrir a câmera');
+  }
+
+  async function publishLocalStream(stream) {
+    stopStreamTracksOnly();
+    resetPeerConnection();
+    localStream = stream;
+    var conn = ensurePc();
+    stream.getTracks().forEach(function (t) {
+      conn.addTrack(t, stream);
+    });
+    var offer = await conn.createOffer();
+    await conn.setLocalDescription(offer);
+    if (transport) {
+      transport.send('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
+    }
+    sendCmd('streamStarted', {});
+    setStreamStatus('Oferta enviada — aguarde o projetor…', '');
+  }
+
+  function startCameraStream() {
+    ensureControl(function () {
+      setStreamStatus('Abrindo câmera…', '');
+      getCameraStream()
+        .then(function (stream) {
+          return publishLocalStream(stream);
+        })
+        .catch(function (e) {
+          setStreamStatus(e.message || 'Falha na câmera', 'bad');
+          alert((e && e.message) || String(e));
+        });
     });
   }
 
-  async function startFileStream(file) {
-    ensureControl(async function () {
-      try {
-        var url = URL.createObjectURL(file);
-        var video = document.createElement('video');
-        video.src = url;
-        video.muted = true;
-        video.playsInline = true;
-        await video.play();
-        if (!video.captureStream && !video.mozCaptureStream) {
-          throw new Error('captureStream não suportado');
+  function startFileStream(file) {
+    ensureControl(function () {
+      setStreamStatus('Preparando arquivo…', '');
+      (async function () {
+        try {
+          requireSecureMedia();
+          var url = URL.createObjectURL(file);
+          if (fileStreamVideo) {
+            try {
+              fileStreamVideo.pause();
+              fileStreamVideo.src = '';
+            } catch (_) {}
+          }
+          var video = document.createElement('video');
+          fileStreamVideo = video;
+          video.src = url;
+          video.muted = true;
+          video.playsInline = true;
+          video.loop = true;
+          await video.play();
+          if (!video.captureStream && !video.mozCaptureStream) {
+            throw new Error('captureStream não suportado');
+          }
+          var stream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+          await publishLocalStream(stream);
+        } catch (e) {
+          var fd = new FormData();
+          fd.append('file', file);
+          fetch(baseUrl + '/api/media/upload?to=tmp', { method: 'POST', body: fd })
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (res) {
+              projectVideo(res.src, file.name);
+              setStreamStatus('Stream indisponível — vídeo enviado ao PC', '');
+              alert('Stream indisponível — vídeo enviado e projetado.');
+            })
+            .catch(function () {
+              setStreamStatus('Falha no stream e no upload', 'bad');
+              alert('Falha no stream e no upload: ' + (e.message || e));
+            });
         }
-        localStream = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-        var conn = ensurePc();
-        localStream.getTracks().forEach(function (t) {
-          conn.addTrack(t, localStream);
-        });
-        var offer = await conn.createOffer();
-        await conn.setLocalDescription(offer);
-        sendCmd('webrtc-signal', { type: 'offer', sdp: conn.localDescription });
-        sendCmd('streamStarted', {});
-      } catch (e) {
-        var fd = new FormData();
-        fd.append('file', file);
-        fetch(baseUrl + '/api/media/upload?to=tmp', { method: 'POST', body: fd })
-          .then(function (r) {
-            return r.json();
-          })
-          .then(function (res) {
-            projectVideo(res.src, file.name);
-            alert('Stream indisponível — vídeo enviado e projetado.');
-          })
-          .catch(function () {
-            alert('Falha no stream e no upload: ' + (e.message || e));
-          });
-      }
+      })();
     });
   }
 
-  function stopStream() {
+  function stopStreamTracksOnly() {
     if (localStream) {
       localStream.getTracks().forEach(function (t) {
-        t.stop();
+        try {
+          t.stop();
+        } catch (_) {}
       });
       localStream = null;
     }
-    if (pc) {
-      pc.close();
-      pc = null;
+    if (fileStreamVideo) {
+      try {
+        fileStreamVideo.pause();
+        fileStreamVideo.removeAttribute('src');
+        fileStreamVideo.load();
+      } catch (_) {}
+      fileStreamVideo = null;
     }
+  }
+
+  function stopStream() {
+    stopStreamTracksOnly();
+    resetPeerConnection();
     if (transport) sendCmd('streamStopped', {});
+    setStreamStatus('Stream parado', '');
   }
 
   async function scanQr() {
@@ -1582,25 +1696,54 @@
     });
   }
   $('btnUploadVideo').addEventListener('click', function () {
-    var file = $('videoFile').files[0];
-    if (!file || !baseUrl) return;
-    var fd = new FormData();
-    fd.append('file', file);
-    fetch(baseUrl + '/api/media/upload?to=videos', { method: 'POST', body: fd })
-      .then(function (r) {
-        return r.json();
-      })
-      .then(function (res) {
+    var input = $('videoFile');
+    var files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+    if (!files.length || !baseUrl) {
+      alert('Escolha pelo menos um vídeo.');
+      return;
+    }
+    var status = $('uploadStatus');
+    var i = 0;
+    var lastRes = null;
+
+    function next() {
+      if (i >= files.length) {
         loadVideos();
-        var item = { type: 'video', title: res.name, src: res.src };
-        state.playlist.push(item);
-        syncPlaylist();
-        renderPlaylist();
-        projectVideo(res.src, res.name);
-      })
-      .catch(function () {
-        alert('Falha no upload');
-      });
+        if (lastRes) {
+          var item = { type: 'video', title: lastRes.name, src: lastRes.src };
+          state.playlist.push(item);
+          syncPlaylist();
+          renderPlaylist();
+          projectVideo(lastRes.src, lastRes.name);
+        }
+        if (status) {
+          setStatus(status, files.length + ' vídeo(s) enviado(s)', 'ok');
+        }
+        input.value = '';
+        return;
+      }
+      var file = files[i++];
+      if (status) setStatus(status, 'Enviando ' + i + '/' + files.length + ': ' + file.name, '');
+      var fd = new FormData();
+      fd.append('file', file);
+      fetch(baseUrl + '/api/media/upload?to=videos', { method: 'POST', body: fd })
+        .then(function (r) {
+          return r.json().then(function (j) {
+            if (!r.ok) throw new Error((j && j.error) || 'upload');
+            return j;
+          });
+        })
+        .then(function (res) {
+          lastRes = res;
+          next();
+        })
+        .catch(function () {
+          if (status) setStatus(status, 'Falha em: ' + file.name, 'bad');
+          alert('Falha no upload de ' + file.name);
+          next();
+        });
+    }
+    next();
   });
   $('btnPlayVid').addEventListener('click', playVideoKeep);
   $('btnPauseVid').addEventListener('click', pauseVideoCmd);
@@ -1618,12 +1761,12 @@
   }
   if ($('btnLiveContain')) {
     $('btnLiveContain').addEventListener('click', function () {
-      applyVideoFit('contain', false);
+      applyVideoFit('contain'); // preserva tela cheia
     });
   }
   if ($('btnLiveCover')) {
     $('btnLiveCover').addEventListener('click', function () {
-      applyVideoFit('cover', false);
+      applyVideoFit('cover'); // preserva tela cheia
     });
   }
   if ($('btnLiveFull')) {
@@ -1648,17 +1791,17 @@
   }
   if ($('btnVideoContain')) {
     $('btnVideoContain').addEventListener('click', function () {
-      applyVideoFit('contain', false);
+      applyVideoFit('contain');
     });
   }
   if ($('btnVideoCover')) {
     $('btnVideoCover').addEventListener('click', function () {
-      applyVideoFit('cover', false);
+      applyVideoFit('cover');
     });
   }
   if ($('btnVideoFull')) {
     $('btnVideoFull').addEventListener('click', function () {
-      applyVideoFit('cover', true);
+      applyVideoFit(state.videoFit || 'cover', true);
     });
   }
   if ($('btnVideoUnmute')) {
@@ -1672,9 +1815,7 @@
     });
   }
   $('btnStartStream').addEventListener('click', function () {
-    startCameraStream().catch(function (e) {
-      alert(e.message || 'Câmera indisponível');
-    });
+    startCameraStream();
   });
   $('btnStartFileStream').addEventListener('click', function () {
     $('streamFile').click();

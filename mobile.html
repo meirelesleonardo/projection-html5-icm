@@ -126,15 +126,34 @@
         <button class="secondary" id="btnClearBg">Limpar fundo de letra</button>
         <div id="videoList"></div>
         <label for="videoFile">Enviar vídeo do celular</label>
-        <input id="videoFile" type="file" accept="video/*">
+        <p class="status" id="videoPickHelp">
+          No Android: toque no campo → <strong>Arquivos</strong> (ou Pastas) → navegue até a pasta
+          (ex. Movies) → escolha um ou mais vídeos. O navegador <strong>não</strong> abre uma pasta
+          fixa sozinho.
+        </p>
+        <input
+          id="videoFile"
+          type="file"
+          accept="video/mp4,video/webm,video/*,.mp4,.webm"
+          multiple
+        >
         <button id="btnUploadVideo">Enviar para o PC</button>
+        <p class="status" id="uploadStatus"></p>
       </div>
       <div class="card">
         <h2>Stream ao vivo</h2>
+        <p class="status" id="streamStatus">
+          Câmera exige HTTPS na LAN (no PC: <code>npm run start:https</code>).
+        </p>
         <button id="btnStartStream">Transmitir câmera</button>
         <button class="secondary" id="btnStartFileStream">Transmitir arquivo (WebRTC)</button>
         <button class="danger" id="btnStopStream">Parar stream</button>
-        <input id="streamFile" type="file" accept="video/*" class="hidden">
+        <input
+          id="streamFile"
+          type="file"
+          accept="video/mp4,video/webm,video/*,.mp4,.webm"
+          class="hidden"
+        >
       </div>
       <div class="toolbar-grid">
         <button id="btnPlayVid">Play vídeo</button>

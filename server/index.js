@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const https = require('https');
 const express = require('express');
 const multer = require('multer');
 const QRCode = require('qrcode');
@@ -18,10 +19,14 @@ const {
   convertUploadedDeck,
   DECK_EXTS,
 } = require('./decks');
+const { httpsEnabled, ensureSelfSignedCerts } = require('./https-certs');
 
 const ROOT = path.join(__dirname, '..');
 const configPath = path.join(__dirname, 'config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+const useHttps = httpsEnabled(config);
+config.protocol = useHttps ? 'https' : 'http';
 
 const mediaDir = path.isAbsolute(config.mediaDir)
   ? config.mediaDir
@@ -44,7 +49,15 @@ const decksDir = path.join(mediaDir, 'decks');
 const decksUploadDir = path.join(mediaDir, 'tmp');
 
 const app = express();
-const server = http.createServer(app);
+
+let server;
+if (useHttps) {
+  const tls = ensureSelfSignedCerts();
+  server = https.createServer(tls, app);
+} else {
+  server = http.createServer(app);
+}
+
 const wss = new WebSocketServer({ server, path: '/ws' });
 const room = new Room(config);
 
@@ -88,7 +101,8 @@ app.get('/api/info', (req, res) => {
 
 app.get('/api/pairing', async (req, res) => {
   const urls = pairingUrls(config);
-  const primary = urls[0] || `http://127.0.0.1:${config.port}/mobile.html`;
+  const proto = config.protocol || 'http';
+  const primary = urls[0] || `${proto}://127.0.0.1:${config.port}/mobile.html`;
   let qrDataUrl = null;
   try {
     qrDataUrl = await QRCode.toDataURL(primary, { width: 512, margin: 1 });
@@ -435,10 +449,17 @@ wss.on('error', onListenError);
 
 server.listen(config.port, '0.0.0.0', () => {
   const ips = listLanIps();
-  console.log(`[server] Projeção ICM v${config.version} on port ${config.port}`);
-  console.log(`[server] Local: http://127.0.0.1:${config.port}/`);
+  const proto = config.protocol || 'http';
+  console.log(`[server] Projeção ICM v${config.version} on port ${config.port} (${proto})`);
+  console.log(`[server] Local: ${proto}://127.0.0.1:${config.port}/`);
   ips.forEach((i) => {
-    console.log(`[server] LAN  : http://${i.address}:${config.port}/mobile.html`);
+    console.log(`[server] LAN  : ${proto}://${i.address}:${config.port}/mobile.html`);
   });
+  if (useHttps) {
+    console.log('[server] HTTPS autoassinado — no celular aceite o aviso do certificado uma vez.');
+    console.log('[server] Câmera/WebRTC exige este HTTPS (HTTP bloqueia getUserMedia na LAN).');
+  } else {
+    console.log('[server] HTTP — para Transmitir câmera, inicie com HTTPS=1 npm start');
+  }
   if (config.roomPin) console.log(`[server] PIN  : ${config.roomPin}`);
 });
