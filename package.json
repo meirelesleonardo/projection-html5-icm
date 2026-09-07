@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "start:https": "HTTPS=1 node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "test": "node --test server/library-store.test.js"
   },
   "engines": {
     "node": ">=18"

@@ -14,6 +14,162 @@ var telaPadrao = ">\n<h1>"+TRANSLATIONS[config.lang]['maranata_title']+"</h1>\n<
 
 var isFirefox = typeof InstallTrigger !== 'undefined';
 
+/** Server-backed library sync (HTTP mode). */
+var libraryVersion = null;
+var libraryDirty = false;
+var libraryRoomPin = '';
+var libraryServerMode = location.protocol.indexOf('http') === 0;
+var _pendingServerLibrary = null;
+var _pendingLocalLibrary = null;
+
+function setLibrarySyncStatus(text, kind) {
+  var el = document.getElementById('librarySyncStatus');
+  if (!el) return;
+  el.textContent = text || 'Biblioteca: —';
+  el.style.color = kind === 'ok' ? '#8f8' : kind === 'bad' ? '#f88' : kind === 'warn' ? '#fc6' : '';
+}
+
+function markLibraryDirty() {
+  libraryDirty = true;
+  setLibrarySyncStatus(
+    libraryServerMode
+      ? 'Biblioteca: alterações não salvas' + (libraryVersion != null ? ' (v' + libraryVersion + ')' : '')
+      : 'Biblioteca: local (file://)',
+    'warn'
+  );
+  var msg = document.getElementById('msgSave');
+  if (msg) $(msg).show();
+}
+
+function markLibraryClean(version) {
+  libraryDirty = false;
+  if (version != null) libraryVersion = version;
+  setLibrarySyncStatus(
+    libraryServerMode
+      ? 'Biblioteca: salva no servidor (v' + libraryVersion + ')'
+      : 'Biblioteca: local',
+    'ok'
+  );
+  var msg = document.getElementById('msgSave');
+  if (msg) $(msg).hide();
+}
+
+function applyLibraryFromObject(library, opts) {
+  opts = opts || {};
+  dados = library;
+  if (!opts.skipLocalCache) {
+    try {
+      localStorage.setItem('data', JSON.stringify(dados));
+    } catch (e) {
+      console.warn('[library] localStorage cheio', e);
+    }
+  }
+  atualizaListasFromJSON(dados);
+  if (opts.version != null) libraryVersion = opts.version;
+  if (opts.dirty) markLibraryDirty();
+  else markLibraryClean(libraryVersion);
+}
+
+function fetchLibraryFromServer() {
+  return fetch('/api/library', { cache: 'no-store' }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var ver = r.headers.get('X-Library-Version');
+    return r.json().then(function (lib) {
+      return {
+        library: lib,
+        version: ver != null ? Number(ver) : null,
+      };
+    });
+  });
+}
+
+function ensureLibraryPin() {
+  if (libraryRoomPin) return Promise.resolve(libraryRoomPin);
+  return fetch('/api/pairing')
+    .then(function (r) {
+      return r.json();
+    })
+    .then(function (info) {
+      libraryRoomPin = info.pin != null ? String(info.pin) : '';
+      return libraryRoomPin;
+    })
+    .catch(function () {
+      return '';
+    });
+}
+
+function saveLibraryToServer() {
+  if (!libraryServerMode) {
+    alert('Salvar no servidor só funciona via http(s):// (abra pelo IP do mini PC).');
+    return Promise.reject(new Error('not_http'));
+  }
+  setLibrarySyncStatus('Biblioteca: salvando…', '');
+  return ensureLibraryPin().then(function (pin) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (pin) headers['X-Room-Pin'] = pin;
+    return fetch('/api/library', {
+      method: 'PUT',
+      headers: headers,
+      body: JSON.stringify({ version: libraryVersion, library: dados }),
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        return { ok: r.ok, status: r.status, body: j };
+      });
+    });
+  }).then(function (res) {
+    if (res.ok) {
+      try {
+        localStorage.setItem('data', JSON.stringify(dados));
+      } catch (e) {}
+      markLibraryClean(res.body.version);
+      return res.body;
+    }
+    if (res.status === 409) {
+      setLibrarySyncStatus('Biblioteca: conflito — atualize antes de salvar', 'bad');
+      alert(
+        (res.body && res.body.error) ||
+          'A biblioteca foi alterada por outro dispositivo. Atualize (F5) antes de salvar.'
+      );
+      throw new Error('conflict');
+    }
+    if (res.status === 403) {
+      setLibrarySyncStatus('Biblioteca: PIN rejeitado', 'bad');
+      alert('PIN incorreto para gravar a biblioteca.');
+      throw new Error('bad_pin');
+    }
+    setLibrarySyncStatus('Biblioteca: falha ao salvar', 'bad');
+    alert(
+      'Erro ao salvar no servidor.\n' +
+        ((res.body && res.body.error) || res.status) +
+        '\n\nSuas alterações continuam nesta tela, mas NÃO estão na biblioteca oficial.'
+    );
+    throw new Error('save_failed');
+  }).catch(function (e) {
+    if (e && e.message === 'conflict') throw e;
+    if (e && e.message === 'bad_pin') throw e;
+    if (e && e.message === 'save_failed') throw e;
+    setLibrarySyncStatus('Biblioteca: servidor indisponível', 'bad');
+    alert(
+      'Servidor indisponível.\nSuas alterações continuam nesta tela, mas NÃO foram salvas na biblioteca oficial.'
+    );
+    throw e;
+  });
+}
+
+function librariesEqual(a, b) {
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch (e) {
+    return false;
+  }
+}
+
+function showLibraryMigrateModal(serverPayload, localLib) {
+  _pendingServerLibrary = serverPayload;
+  _pendingLocalLibrary = localLib;
+  $('#libraryMigrateModal').modal('show');
+}
+
 function loadJSON(callback, onError) {   
   var xobj = new XMLHttpRequest();
   xobj.overrideMimeType("application/json");
@@ -33,22 +189,62 @@ function loadJSON(callback, onError) {
 }
 
 function carregaLouvores(){
-  // Testa se já possui armazenado no navegador
-  if(localStorage.getItem("data") === null){
-    // Em HTTP (servidor local), carrega data.json automaticamente em qualquer navegador
-    if(isFirefox || location.protocol.indexOf('http') === 0){
-      loadJSON(function(response) {        
-        atualizaListaArquivos(response);  
+  if (libraryServerMode) {
+    setLibrarySyncStatus('Biblioteca: carregando…', '');
+    ensureLibraryPin();
+    fetchLibraryFromServer()
+      .then(function (payload) {
+        var localRaw = localStorage.getItem('data');
+        var localLib = null;
+        if (localRaw) {
+          try {
+            localLib = JSON.parse(localRaw);
+          } catch (e) {
+            localLib = null;
+          }
+        }
+        if (localLib && !librariesEqual(localLib, payload.library)) {
+          showLibraryMigrateModal(payload, localLib);
+          // Default view: server (official) until user chooses
+          applyLibraryFromObject(payload.library, { version: payload.version, dirty: false });
+          setLibrarySyncStatus('Biblioteca: divergência local × servidor', 'warn');
+          return;
+        }
+        applyLibraryFromObject(payload.library, { version: payload.version, dirty: false });
+      })
+      .catch(function () {
+        setLibrarySyncStatus('Biblioteca: falha ao carregar servidor', 'bad');
+        var localRaw = localStorage.getItem('data');
+        if (localRaw) {
+          try {
+            applyLibraryFromObject(JSON.parse(localRaw), { dirty: true });
+            alert(
+              'Não foi possível ler a biblioteca do servidor.\nUsando cópia local temporária — NÃO está confirmada como oficial.'
+            );
+            return;
+          } catch (e) {}
+        }
+        $('#carregarModal').modal('toggle');
+      });
+    return;
+  }
+
+  // Legado file://
+  if (localStorage.getItem('data') === null) {
+    if (isFirefox) {
+      loadJSON(function (response) {
+        atualizaListaArquivos(response);
+        markLibraryClean(null);
       }, function () {
         $('#carregarModal').modal('toggle');
-      });    
+      });
     } else {
-      $('#carregarModal').modal('toggle')
-    }    
+      $('#carregarModal').modal('toggle');
+    }
   } else {
-    var dadosstring = localStorage.getItem("data");    
-    atualizaListaArquivos(dadosstring);
-  }  
+    atualizaListaArquivos(localStorage.getItem('data'));
+    markLibraryClean(null);
+  }
 }
 
 $("#filedata").change(function() {
@@ -59,6 +255,7 @@ $("#filedata").change(function() {
     reader.onload = function(event) {
       var contents = event.target.result;
       atualizaListaArquivos(contents);
+      if (libraryServerMode) markLibraryDirty();
     }
 
     // when the file is read it triggers the onload event above.
@@ -149,6 +346,7 @@ function atualizaListaArquivos(newData){
       lastAdded = dados[pastaSelecionada].songs.length - 1;
        
       atualizaListasFromJSON(dados);
+      markLibraryDirty();
 
       if(imagens.length > 0) pastaSelecionada++;
       if(avisos.length > 0) pastaSelecionada++;
@@ -229,6 +427,7 @@ function atualizaListasFromJSON(newData){
       ref_selected = pastaSelecionada+"_"+lastAdded;
 
       atualizaListasFromJSON(dados);
+      markLibraryDirty();
 
       $('#guias a[href="#edit"]').tab('show');     
 
@@ -301,6 +500,7 @@ $("#confirmMakeFolder").click(function(){
     console.log("tentou criar pasta com o nome: "+name+"na lingua: "+lang);
     dados.push({name: name, type: "s", lang: lang, songs: []});
     atualizaListasFromJSON(dados);
+    markLibraryDirty();
     $('#makeFolderModal').modal('toggle');
 });
 
@@ -334,8 +534,11 @@ $("#confirmDeleteFromTree").click(function(){
     localStorage.setItem('warnings', JSON.stringify(avisos));
     localStorage.setItem('data', JSON.stringify(dados));
     atualizaListasFromJSON(dados);    
-    $('#title').val(dados[0].songs[0].title);    
-    $('#content').val(dados[0].songs[0].content);
+    if (dados[0] && dados[0].songs && dados[0].songs[0]) {
+      $('#title').val(dados[0].songs[0].title);    
+      $('#content').val(dados[0].songs[0].content);
+    }
+    markLibraryDirty();
     $('#excluirModal').modal('toggle');   
 });
 
@@ -344,8 +547,45 @@ $("#save").click(function(){
   dados[pastaAtiva].songs[louvorAtivo].content = $("#content").val();
   ref_selected = pastaAtiva+"_"+louvorAtivo;
   atualizaListasFromJSON(dados);
-  localStorage.setItem('data', JSON.stringify(dados));  
-  $("#msgSave").show();
+  localStorage.setItem('data', JSON.stringify(dados));
+  markLibraryDirty();
+  if (libraryServerMode) {
+    saveLibraryToServer().catch(function () {});
+  } else {
+    $("#msgSave").show();
+  }
+});
+
+$("#btnSaveLibraryServer").click(function () {
+  // Persist current edit fields first
+  if (dados[pastaAtiva] && dados[pastaAtiva].songs && dados[pastaAtiva].songs[louvorAtivo]) {
+    dados[pastaAtiva].songs[louvorAtivo].title = $("#title").val();
+    dados[pastaAtiva].songs[louvorAtivo].content = $("#content").val();
+  }
+  saveLibraryToServer().catch(function () {});
+});
+
+$("#btnUseServerLibrary").click(function () {
+  if (_pendingServerLibrary) {
+    applyLibraryFromObject(_pendingServerLibrary.library, {
+      version: _pendingServerLibrary.version,
+      dirty: false,
+    });
+  }
+  $('#libraryMigrateModal').modal('hide');
+});
+
+$("#btnUploadLocalLibrary").click(function () {
+  if (!_pendingLocalLibrary) {
+    $('#libraryMigrateModal').modal('hide');
+    return;
+  }
+  applyLibraryFromObject(_pendingLocalLibrary, {
+    version: _pendingServerLibrary ? _pendingServerLibrary.version : libraryVersion,
+    dirty: true,
+  });
+  $('#libraryMigrateModal').modal('hide');
+  saveLibraryToServer().catch(function () {});
 });
 
 $("#export").click(function(){
@@ -372,6 +612,7 @@ $("#fileImport").change(function() {
     reader.onload = function(event) {
       var contents = event.target.result;
       atualizaListaArquivos(contents);
+      if (libraryServerMode) markLibraryDirty();
     }
 
     // when the file is read it triggers the onload event above.

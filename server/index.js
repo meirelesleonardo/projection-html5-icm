@@ -20,6 +20,8 @@ const {
   DECK_EXTS,
 } = require('./decks');
 const { httpsEnabled, ensureSelfSignedCerts } = require('./https-certs');
+const { createLibraryStore } = require('./library-store');
+const { validatePutBody, MAX_LIBRARY_BYTES } = require('./library-validate');
 
 const ROOT = path.join(__dirname, '..');
 const configPath = path.join(__dirname, 'config.json');
@@ -60,6 +62,45 @@ if (useHttps) {
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 const room = new Room(config);
+const libraryStore = createLibraryStore({ rootDir: ROOT });
+
+/** Simple write rate limit: max 30 PUTs / minute / IP */
+const libraryWriteHits = new Map();
+function rateLimitLibraryWrite(ip) {
+  const now = Date.now();
+  let entry = libraryWriteHits.get(ip);
+  if (!entry || now - entry.start > 60000) {
+    entry = { start: now, count: 0 };
+    libraryWriteHits.set(ip, entry);
+  }
+  entry.count += 1;
+  return entry.count <= 30;
+}
+
+function requireLibraryPin(req, res) {
+  const expected = config.roomPin != null ? String(config.roomPin) : '';
+  if (!expected) return true;
+  const got = req.get('X-Room-Pin') || req.get('x-room-pin') || '';
+  if (String(got) !== expected) {
+    res.status(403).json({
+      error: 'PIN incorreto ou ausente',
+      code: 'bad_pin',
+    });
+    return false;
+  }
+  return true;
+}
+
+function setLibraryHeaders(res, meta) {
+  res.setHeader('X-Library-Version', String(meta.version));
+  res.setHeader('ETag', `"${meta.etag || meta.version}"`);
+  if (meta.updatedAt) {
+    try {
+      res.setHeader('Last-Modified', new Date(meta.updatedAt).toUTCString());
+    } catch (_) {}
+  }
+  res.setHeader('Cache-Control', 'no-store');
+}
 
 const storage = multer.diskStorage({
   destination(req, file, cb) {
@@ -119,11 +160,78 @@ app.get('/api/pairing', async (req, res) => {
 });
 
 app.get('/api/library', (req, res) => {
-  const dataFile = path.join(ROOT, 'data', 'data.json');
-  if (!fs.existsSync(dataFile)) {
-    return res.status(404).json({ error: 'data.json not found' });
+  try {
+    const loaded = libraryStore.load();
+    setLibraryHeaders(res, loaded);
+    return res.status(200).json(loaded.library);
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      return res.status(404).json({ error: 'data.json not found' });
+    }
+    console.error('[library] GET failed', e.message);
+    return res.status(500).json({ error: e.message || 'falha ao ler biblioteca' });
   }
-  res.sendFile(dataFile);
+});
+
+app.put('/api/library', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+
+  const body = req.body;
+  const parsed = validatePutBody(body);
+  if (!parsed.ok) {
+    console.warn(`[library] PUT rejected validation from ${ip}: ${parsed.error}`);
+    return res.status(400).json({ error: parsed.error, code: 'validation' });
+  }
+
+  const approx = Buffer.byteLength(JSON.stringify(body.library), 'utf8');
+  if (approx > MAX_LIBRARY_BYTES) {
+    return res.status(413).json({ error: 'payload demasiado grande', code: 'too_large' });
+  }
+
+  try {
+    const result = libraryStore.saveAtomic(body.library, body.version);
+    console.log(
+      `[library] update success ip=${ip} version=${result.version} bytes≈${approx}`
+    );
+    setLibraryHeaders(res, result);
+    return res.status(200).json({
+      ok: true,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    });
+  } catch (e) {
+    if (e.code === 'CONFLICT' || e.status === 409) {
+      console.warn(`[library] conflict ip=${ip} expected=${body.version} current=${e.currentVersion}`);
+      return res.status(409).json({
+        error: e.message,
+        code: 'conflict',
+        version: e.currentVersion,
+        updatedAt: e.updatedAt,
+      });
+    }
+    if (e.code === 'VALIDATION' || e.status === 400) {
+      return res.status(400).json({ error: e.message, code: 'validation' });
+    }
+    console.error('[library] PUT failed', e.message);
+    const status = e.code === 'ENOSPC' ? 507 : 500;
+    return res.status(status).json({
+      error: e.message || 'falha ao gravar biblioteca',
+      code: e.code || 'write_error',
+    });
+  }
+});
+
+app.get('/api/library/backups', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    return res.json({ backups: libraryStore.listBackups() });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/media/list', (req, res) => {

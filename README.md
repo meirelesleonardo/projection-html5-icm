@@ -8,11 +8,13 @@ Painel desktop | Projeção
 
 ## Modos de uso
 
-### A) Desktop clássico (mesmo PC)
+### A) Desktop via servidor (recomendado)
 
-1. Abra `index.html` no Firefox (recomendado).
-2. Permita pop-ups para abrir `view.html`.
-3. No Chrome/Opera, importe `data/data.json` manualmente se necessário.
+1. `npm start` no mini PC.
+2. Abra `http://127.0.0.1:3080/index.html` (ou o IP da LAN).
+3. Edite louvores e use **Salvar no servidor** (PIN = `roomPin` da config).
+4. **Exportar backup** gera `data.json` para arquivo — não é o fluxo normal de gravação.
+5. Permita pop-ups se usar a janela de projeção.
 
 ### B) LAN / hotspot (celular controla o mini PC Zorin)
 
@@ -29,7 +31,9 @@ npm run start:https
 
 Sem IP fixo: o projetor exibe **QR + IP** para pareamento no hotspot.
 
-PIN padrão: `1234` (altere em `server/config.json`).
+PIN padrão: `1234` (altere em `server/config.json`). O mesmo PIN protege a **gravação** da biblioteca (`PUT /api/library`).
+
+Testes da persistência: `npm test`.
 
 ## Documentação
 

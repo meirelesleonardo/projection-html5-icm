@@ -659,16 +659,21 @@
   }
 
   function loadLibrary() {
-    fetch(baseUrl + '/api/library')
+    fetch(baseUrl + '/api/library', { cache: 'no-store' })
       .then(function (r) {
-        return r.json();
+        var ver = r.headers.get('X-Library-Version');
+        return r.json().then(function (data) {
+          return { data: data, version: ver != null ? Number(ver) : null, ok: r.ok };
+        });
       })
-      .then(function (data) {
-        state.library = data;
+      .then(function (res) {
+        if (!res.ok) throw new Error('bad status');
+        state.library = res.data;
+        state.libraryVersion = res.version;
         renderLibrary($('libSearch').value);
       })
       .catch(function () {
-        $('libraryBox').innerHTML = '<p class="status bad">Falha ao carregar data.json</p>';
+        $('libraryBox').innerHTML = '<p class="status bad">Falha ao carregar biblioteca do servidor</p>';
       });
   }
 

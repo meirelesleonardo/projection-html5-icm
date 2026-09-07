@@ -73,7 +73,7 @@ let TRANSLATIONS = {
     'list_projection': 'List to projection',
     'empty_projection_list_msg': 'Empty list. Double click on the song to add',
     'need_export_msg': {
-      'html': '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>One or more songs from your list have been edited, do not forget to <strong>Export</strong> and replace <strong>data.json</strong> in your folder <strong>/data</strong>'
+      'html': '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>There are local changes. Use <strong>Save to server</strong> for the official library. <strong>Export</strong> is only a backup.'
     },
     'projection': 'Projection',
     'select_image': 'Select Image',
@@ -82,7 +82,7 @@ let TRANSLATIONS = {
       'html': '<i class="fas fa-upload"></i> Import...',
     },
     'btn_menu_export': {
-      'html': '<i class="fas fa-download"></i> Export...',
+      'html': '<i class="fas fa-download"></i> Export backup...',
     },
     'btn_start_view': {
       'title': 'Open projection screen'
@@ -172,7 +172,7 @@ let TRANSLATIONS = {
     'list_projection': 'Lista para projeção',
     'empty_projection_list_msg': 'Lista vazia. Dê um duplo clique sobre o louvor para adicionar',
     'need_export_msg': {
-      'html': '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>Um ou mais louvores de sua lista foram editados, não esqueça de <strong>Exportar</strong> e substituir o <strong>data.json</strong> em sua pasta <strong>/data</strong>'
+      'html': '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>Há alterações locais. Use <strong>Salvar no servidor</strong> para gravar a biblioteca oficial. <strong>Exportar</strong> gera apenas um backup.'
     },
     'projection': 'Projeção',
     'select_image': 'Selecionar Imagem',
@@ -181,7 +181,7 @@ let TRANSLATIONS = {
       'html': '<i class="fas fa-upload"></i> Importar...',
     },
     'btn_menu_export': {
-      'html': '<i class="fas fa-download"></i> Exportar...',
+      'html': '<i class="fas fa-download"></i> Exportar backup...',
     },
     'btn_start_view': {
       'title': 'Abrir tela de projeção'
@@ -271,7 +271,7 @@ let TRANSLATIONS = {
     'list_projection': 'Lista di proiezione',
     'empty_projection_list_msg': 'Lista vuota. Fai doppio clic sulla canzone da aggiungere',
     'need_export_msg': {
-      'html': '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>Uno o più brani della tua lista sono stati modificati, non dimenticarti di <strong>Esportare</strong> e sostituire il <strong>data.json</strong> nel tuo cartella <strong>/data</strong>'
+      'html': '<button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>Ci sono modifiche locali. Usa <strong>Salva sul server</strong> per la libreria ufficiale. <strong>Esporta</strong> è solo un backup.'
     },
     'projection': 'Proiezione',
     'select_image': 'Seleziona immagine',
@@ -280,7 +280,7 @@ let TRANSLATIONS = {
       'html': '<i class="fas fa-upload"></i> Importare...',
     },
     'btn_menu_export': {
-      'html': '<i class="fas fa-download"></i> Esportare...',
+      'html': '<i class="fas fa-download"></i> Esporta backup...',
     },
     'btn_start_view': {
       'title': 'Apri lo schermo di proiezione'

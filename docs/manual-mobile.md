@@ -24,7 +24,7 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 
 - **Ao vivo:** anterior / próximo, tap no slide; **Logo / padrão** interrompe qualquer fluxo (vídeo, louvor, stream) e mostra a tela Maranata. Com vídeo projetado, aparecem pause / ±10s / contain / cover / tela cheia / **Som** / **Mudo**.
 - **Lista:** itens do culto; toque para **transmitir**. Use **↑ / ↓** para reordenar e **Remover** para tirar da lista.
-- **Louvores:** busca na biblioteca (`data.json`); toque **só adiciona à lista** (não transmite). Transmissão é sempre pela Lista.
+- **Louvores:** busca na biblioteca oficial do servidor (`GET /api/library`); toque **só adiciona à lista** (não transmite). Edição de louvores no mobile fica para etapa futura — use o painel desktop + **Salvar no servidor**.
 - **Bíblia:** escolha versão (ACF/NVI), livro, capítulo e versículos; **Adicionar à lista**. Projete pela Lista.
 - **Slides:** envie `.pptx` ou `.pdf`; o PC converte (LibreOffice + pdftoppm) em imagens. **Adicionar à lista** ou **Projetar**; navegue no Ao vivo com anterior/próximo.
 - **Mídia:**

@@ -54,6 +54,22 @@ Funções principais: `hello`, `reloadReveal`, `changeSlide`, `changeTheme`, `ch
 
 O relay guarda o último snapshot: slides HTML, índice, tema, fonte, playlist, quem tem o comando, perfil de display. Novos clientes recebem `stateSnapshot` no `hello`.
 
+## Biblioteca de louvores (fonte da verdade no servidor)
+
+Em modo LAN (`http(s)://`), o documento oficial é `data/data.json` no mini PC.
+
+| Método | Rota | Função |
+|--------|------|--------|
+| GET | `/api/library` | Lê o array de pastas/songs; headers `X-Library-Version`, `ETag` |
+| PUT | `/api/library` | Body `{ version, library }`; exige `X-Room-Pin` (= `roomPin`); gravação atômica + backup |
+| GET | `/api/library/backups` | Lista backups (PIN) |
+
+Persistência: [`server/library-store.js`](../server/library-store.js) (tmp → rename), meta em `data/library-meta.json`, backups em `data/backups/` (últimos 5). Validação em [`server/library-validate.js`](../server/library-validate.js). Conflito de versão → **409**.
+
+O desktop (`index.html`) carrega/salva via API. `localStorage.data` é só cache; divergência abre modal de migração. **Exportar** = backup/portabilidade, não o fluxo normal de persistência.
+
+Avisos, imagens do usuário e bíblia **não** fazem parte deste documento (continuam separados).
+
 ## Segurança na LAN
 
-PIN de sala (opcional). Sem TLS na LAN do hotspot (HTTP). Não expor a porta na internet pública.
+PIN de sala (`roomPin` em `server/config.json`): WebSocket `hello` e **escrita** da biblioteca (`X-Room-Pin`). Leitura da biblioteca é aberta na LAN. Preferir HTTPS (`npm run start:https`) para câmera/WebRTC. Não expor a porta na internet pública.

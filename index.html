@@ -58,6 +58,12 @@
             </div>
           </li>
           <li class="nav-item">
+            <span id="librarySyncStatus" class="navbar-text px-2 small" title="Status da biblioteca">Biblioteca: —</span>
+          </li>
+          <li class="nav-item">
+            <button id="btnSaveLibraryServer" type="button" class="btn btn-success btn-sm" title="Salvar biblioteca no servidor">Salvar no servidor</button>
+          </li>
+          <li class="nav-item">
             <button id="btnTakeControlDesktop" type="button" class="btn btn-dark" title="Assumir comando da projeção">Assumir comando</button>
           </li>
           <li class="nav-item">
@@ -86,6 +92,28 @@
       </div>
     </div>
   </div>
+  <div class="modal fade" id="libraryMigrateModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Biblioteca local encontrada</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p>Há uma cópia da biblioteca neste navegador (<code>localStorage</code>) diferente da biblioteca oficial do servidor.</p>
+          <p class="mb-0"><strong>O servidor é a fonte oficial.</strong> Escolha:</p>
+        </div>
+        <div class="modal-footer flex-wrap">
+          <button type="button" class="btn btn-primary" id="btnUseServerLibrary">Usar biblioteca do servidor</button>
+          <button type="button" class="btn btn-warning" id="btnUploadLocalLibrary">Enviar biblioteca local ao servidor</button>
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="carregarModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
     <div class="modal-dialog" role="document">
       <div class="modal-content">
@@ -555,12 +583,12 @@
             Lista para projeção
           </div>
           <div class="card-block" style="height: 45vh; overflow-x: hidden !important; overflow-y: scroll;">
-            <div id="msgSave" class="alert alert-warning alert-dismissible fade show" role="alert"  data-lang-str="need_export_msg">
+            <div id="msgSave" class="alert alert-warning alert-dismissible fade show" role="alert" data-lang-str="need_export_msg">
               <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
               </button>
-              Um ou mais louvores de sua lista foram editados, não esqueça de <strong>Exportar</strong> e substituir o <strong>data.json</strong> em sua pasta <strong>/data</strong>
-            </div>          
+              Há alterações locais. Use <strong>Salvar no servidor</strong> para gravar a biblioteca oficial. <strong>Exportar</strong> gera apenas um backup.
+            </div>
             <table id="projections" class="table table-sm table-bordered">
                 <tbody>                  
                 </tbody>
