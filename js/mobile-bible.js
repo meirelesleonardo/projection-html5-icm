@@ -84,7 +84,7 @@
     var from = Number(opts.from) || 0;
     var to = Number(opts.to) != null ? Number(opts.to) : from;
     if (to < from) to = from;
-    var bg = ' data-background="' + (opts.bg || 'imagens/fundo.jpg') + '"';
+    var bg = ' data-background="' + (opts.bg || '#000000') + '"';
     var html = '';
     for (var i = from; i <= to; i++) {
       var text = data[b].chapters[c][i];

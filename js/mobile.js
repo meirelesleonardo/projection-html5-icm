@@ -177,6 +177,45 @@
     return transport.send(fn, data);
   }
 
+  function extractCssContentStrings(styleText) {
+    var out = [];
+    var re = /content\s*:\s*["']([^"']*)["']/gi;
+    var m;
+    while ((m = re.exec(styleText || ''))) {
+      var v = String(m[1] || '').trim();
+      if (v) out.push(v);
+    }
+    return out;
+  }
+
+  function slidePreviewText(sec) {
+    if (!sec) return '';
+    var clone = sec.cloneNode(true);
+    var styles = clone.querySelectorAll('style');
+    var cssBlob = '';
+    Array.prototype.forEach.call(styles, function (st) {
+      cssBlob += st.textContent || '';
+      if (st.parentNode) st.parentNode.removeChild(st);
+    });
+
+    var text = (clone.innerText || clone.textContent || '')
+      .trim()
+      .replace(/\s+/g, ' ');
+    if (text) return text.slice(0, 120);
+
+    var fromCss = extractCssContentStrings(cssBlob);
+    if (fromCss.length) return fromCss.join(' — ').slice(0, 120);
+
+    var stateAttr = String(sec.getAttribute('data-state') || '');
+    if (/scriptures/i.test(stateAttr)) return 'Escritura';
+    if (/showtitle/i.test(stateAttr)) return 'Título';
+    if (/showlogo/i.test(stateAttr)) return 'Logo';
+    if (/show_backlay|backlay/i.test(stateAttr)) return 'Tela padrão';
+    if (clone.querySelector('img')) return 'Imagem';
+    if (clone.querySelector('video') || sec.getAttribute('data-video-src')) return 'Vídeo';
+    return '';
+  }
+
   function parseSlides(html) {
     var div = document.createElement('div');
     div.innerHTML = html || '';
@@ -184,7 +223,7 @@
     return Array.prototype.map.call(sections, function (sec, i) {
       return {
         index: i,
-        text: (sec.innerText || sec.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120),
+        text: slidePreviewText(sec),
       };
     });
   }
@@ -546,7 +585,7 @@
                   c: bb.c,
                   from: bb.from,
                   to: bb.to,
-                  bg: BG_DEFAULT,
+                  bg: '#000000',
                   closingHtml: closing,
                 })
               );
@@ -875,7 +914,7 @@
         c: c,
         from: from,
         to: to,
-        bg: BG_DEFAULT,
+        bg: '#000000',
         closingHtml: closing,
       });
       var title = MobileBible.passageLabel(v, b, c, from, to);
