@@ -22,6 +22,7 @@ const {
 const { httpsEnabled, ensureSelfSignedCerts } = require('./https-certs');
 const { createLibraryStore } = require('./library-store');
 const { validatePutBody, MAX_LIBRARY_BYTES } = require('./library-validate');
+const libraryArchive = require('./library-archive');
 
 const ROOT = path.join(__dirname, '..');
 const configPath = path.join(__dirname, 'config.json');
@@ -246,6 +247,75 @@ app.put('/api/library', (req, res) => {
       code: e.code || 'write_error',
     });
   }
+});
+
+function handleLibraryArchiveMutation(req, res, mutator, label) {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const loaded = libraryStore.load();
+    const next = mutator(loaded.library, req.body || {});
+    const result = libraryStore.saveAtomic(next, (req.body && req.body.version) != null ? req.body.version : loaded.version);
+    console.log(`[library] ${label} ip=${ip} version=${result.version}`);
+    setLibraryHeaders(res, result);
+    return res.status(200).json({
+      ok: true,
+      version: result.version,
+      updatedAt: result.updatedAt,
+      library: next,
+    });
+  } catch (e) {
+    if (e.code === 'CONFLICT' || e.status === 409) {
+      return res.status(409).json({
+        error: e.message,
+        code: 'conflict',
+        version: e.currentVersion,
+        updatedAt: e.updatedAt,
+      });
+    }
+    const status = e.status || (e.code === 'NOT_FOUND' ? 404 : 400);
+    return res.status(status).json({
+      error: e.message || 'falha',
+      code: e.code || 'error',
+    });
+  }
+}
+
+app.get('/api/library/archived', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const loaded = libraryStore.load();
+    setLibraryHeaders(res, loaded);
+    return res.json({
+      ok: true,
+      version: loaded.version,
+      ...libraryArchive.listArchived(loaded.library),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/library/songs/archive', (req, res) => {
+  handleLibraryArchiveMutation(req, res, libraryArchive.archiveSong, 'song-archive');
+});
+app.post('/api/library/songs/restore', (req, res) => {
+  handleLibraryArchiveMutation(req, res, libraryArchive.restoreSong, 'song-restore');
+});
+app.delete('/api/library/songs', (req, res) => {
+  handleLibraryArchiveMutation(req, res, libraryArchive.deleteSong, 'song-delete');
+});
+app.post('/api/library/folders/archive', (req, res) => {
+  handleLibraryArchiveMutation(req, res, libraryArchive.archiveFolder, 'folder-archive');
+});
+app.post('/api/library/folders/restore', (req, res) => {
+  handleLibraryArchiveMutation(req, res, libraryArchive.restoreFolder, 'folder-restore');
+});
+app.delete('/api/library/folders', (req, res) => {
+  handleLibraryArchiveMutation(req, res, libraryArchive.deleteFolder, 'folder-delete');
 });
 
 app.get('/api/library/backups', (req, res) => {

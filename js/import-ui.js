@@ -1,4 +1,4 @@
-/* global $, libraryServerMode, libraryVersion, ensureLibraryPin, fetchLibraryFromServer, applyLibraryFromObject */
+/* global $, libraryServerMode, libraryVersion, ensureLibraryPin, fetchLibraryFromServer, applyLibraryFromObject, callLibraryArchiveApi, applyLibraryApiResult */
 (function () {
   'use strict';
 
@@ -394,6 +394,189 @@
           $('#libraryBackupsModal').modal('hide');
           alert('Backup restaurado. Versão ' + (res.body.version || ''));
         });
+      });
+  });
+
+  function setMaintStatus(text, isError) {
+    var $el = $('#maintStatus');
+    $el.text(text || '');
+    $el.toggleClass('text-danger', !!isError);
+    $el.toggleClass('text-muted', !isError);
+  }
+
+  function renderMaintenanceLists(data) {
+    var $folders = $('#maintArchivedFolders');
+    var $songs = $('#maintArchivedSongs');
+    $folders.empty();
+    $songs.empty();
+
+    (data.folders || []).forEach(function (f) {
+      $folders.append(
+        '<div class="border rounded p-2 mb-2 d-flex justify-content-between align-items-start">' +
+          '<div class="small"><strong>' +
+          $('<div>').text(f.name).html() +
+          '</strong><br><span class="text-muted">' +
+          (f.archivedAt || '') +
+          (f.archiveReason ? ' · ' + $('<div>').text(f.archiveReason).html() : '') +
+          ' · ' +
+          (f.songCount || 0) +
+          ' louvores</span></div>' +
+          '<div class="btn-group-vertical btn-group-sm">' +
+          '<button type="button" class="btn btn-outline-primary maint-restore-folder" data-fi="' +
+          f.folderIndex +
+          '" data-name="' +
+          $('<div>').text(f.name).html() +
+          '">Restaurar</button>' +
+          '<button type="button" class="btn btn-outline-danger maint-purge-folder" data-fi="' +
+          f.folderIndex +
+          '" data-name="' +
+          $('<div>').text(f.name).html() +
+          '">Excluir</button>' +
+          '</div></div>'
+      );
+    });
+    if (!(data.folders || []).length) {
+      $folders.append('<p class="text-muted small">Nenhuma pasta arquivada.</p>');
+    }
+
+    (data.songs || []).forEach(function (s) {
+      $songs.append(
+        '<div class="border rounded p-2 mb-2 d-flex justify-content-between align-items-start">' +
+          '<div class="small"><strong>' +
+          $('<div>').text(s.title).html() +
+          '</strong><br><span class="text-muted">' +
+          $('<div>').text(s.folderName || '').html() +
+          (s.archivedAt ? ' · ' + s.archivedAt : '') +
+          (s.archiveReason ? ' · ' + $('<div>').text(s.archiveReason).html() : '') +
+          '</span></div>' +
+          '<div class="btn-group-vertical btn-group-sm">' +
+          '<button type="button" class="btn btn-outline-primary maint-restore-song" data-fi="' +
+          s.folderIndex +
+          '" data-si="' +
+          s.songIndex +
+          '" data-title="' +
+          $('<div>').text(s.title).html() +
+          '">Restaurar</button>' +
+          '<button type="button" class="btn btn-outline-danger maint-purge-song" data-fi="' +
+          s.folderIndex +
+          '" data-si="' +
+          s.songIndex +
+          '" data-title="' +
+          $('<div>').text(s.title).html() +
+          '">Excluir</button>' +
+          '</div></div>'
+      );
+    });
+    if (!(data.songs || []).length) {
+      $songs.append('<p class="text-muted small">Nenhum louvor arquivado.</p>');
+    }
+  }
+
+  function loadMaintenance() {
+    setMaintStatus('Carregando…');
+    return ensureLibraryPin()
+      .then(function (pin) {
+        return fetch('/api/library/archived', { headers: importHeaders(pin, false) }).then(function (r) {
+          return r.json().then(function (j) {
+            return { ok: r.ok, body: j };
+          });
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error((res.body && res.body.error) || 'Falha ao listar arquivados');
+        renderMaintenanceLists(res.body);
+        setMaintStatus(
+          'Versão ' + (res.body.version != null ? res.body.version : libraryVersion)
+        );
+      })
+      .catch(function (e) {
+        setMaintStatus(String(e.message || e), true);
+      });
+  }
+
+  $('#btnLibraryMaintenance').on('click', function () {
+    if (!requireHttp()) return;
+    $('#libraryMaintenanceModal').modal('show');
+    loadMaintenance();
+  });
+
+  $('#btnMaintRefresh').on('click', function () {
+    loadMaintenance();
+  });
+
+  function maintConfirmTitle(expected) {
+    var typed = window.prompt('Digite o título/nome exato para confirmar a exclusão definitiva:\n\n' + expected);
+    if (typed == null) return null;
+    if (String(typed).trim() !== String(expected).trim()) {
+      alert('Texto não confere. Operação cancelada.');
+      return null;
+    }
+    return String(typed).trim();
+  }
+
+  $('#maintArchivedFolders').on('click', '.maint-restore-folder', function () {
+    var fi = Number($(this).data('fi'));
+    callLibraryArchiveApi('POST', '/api/library/folders/restore', {
+      version: libraryVersion,
+      folderIndex: fi,
+    })
+      .then(applyLibraryApiResult)
+      .then(loadMaintenance)
+      .catch(function (e) {
+        alert(e.message || e);
+      });
+  });
+
+  $('#maintArchivedFolders').on('click', '.maint-purge-folder', function () {
+    var fi = Number($(this).data('fi'));
+    var name = String($(this).data('name') || '');
+    var confirmTitle = maintConfirmTitle(name);
+    if (!confirmTitle) return;
+    if (!confirm('Excluir DEFINITIVAMENTE a pasta e todos os louvores?\n' + name)) return;
+    callLibraryArchiveApi('DELETE', '/api/library/folders', {
+      version: libraryVersion,
+      folderIndex: fi,
+      confirmTitle: confirmTitle,
+    })
+      .then(applyLibraryApiResult)
+      .then(loadMaintenance)
+      .catch(function (e) {
+        alert(e.message || e);
+      });
+  });
+
+  $('#maintArchivedSongs').on('click', '.maint-restore-song', function () {
+    var fi = Number($(this).data('fi'));
+    var si = Number($(this).data('si'));
+    callLibraryArchiveApi('POST', '/api/library/songs/restore', {
+      version: libraryVersion,
+      folderIndex: fi,
+      songIndex: si,
+    })
+      .then(applyLibraryApiResult)
+      .then(loadMaintenance)
+      .catch(function (e) {
+        alert(e.message || e);
+      });
+  });
+
+  $('#maintArchivedSongs').on('click', '.maint-purge-song', function () {
+    var fi = Number($(this).data('fi'));
+    var si = Number($(this).data('si'));
+    var title = String($(this).data('title') || '');
+    var confirmTitle = maintConfirmTitle(title);
+    if (!confirmTitle) return;
+    if (!confirm('Excluir DEFINITIVAMENTE este louvor?\n' + title)) return;
+    callLibraryArchiveApi('DELETE', '/api/library/songs', {
+      version: libraryVersion,
+      folderIndex: fi,
+      songIndex: si,
+      confirmTitle: confirmTitle,
+    })
+      .then(applyLibraryApiResult)
+      .then(loadMaintenance)
+      .catch(function (e) {
+        alert(e.message || e);
       });
   });
 })();

@@ -6,6 +6,25 @@ const MAX_SONGS_PER_FOLDER = 20000;
 const MAX_TITLE_LEN = 2000;
 const MAX_CONTENT_LEN = 500000;
 const MAX_NAME_LEN = 500;
+const MAX_ARCHIVE_REASON_LEN = 500;
+
+function validateArchiveFields(obj, label) {
+  if (obj.archived != null && typeof obj.archived !== 'boolean') {
+    return { ok: false, error: `${label}.archived deve ser boolean` };
+  }
+  if (obj.archivedAt != null && typeof obj.archivedAt !== 'string') {
+    return { ok: false, error: `${label}.archivedAt deve ser string` };
+  }
+  if (obj.archiveReason != null) {
+    if (typeof obj.archiveReason !== 'string') {
+      return { ok: false, error: `${label}.archiveReason deve ser string` };
+    }
+    if (obj.archiveReason.length > MAX_ARCHIVE_REASON_LEN) {
+      return { ok: false, error: `${label}.archiveReason muito longo` };
+    }
+  }
+  return { ok: true };
+}
 
 /**
  * Validate library document (array of folders with songs).
@@ -37,6 +56,8 @@ function validateLibrary(library) {
     if (typeof folder.lang !== 'string' || !folder.lang.trim()) {
       return { ok: false, error: `pasta[${i}].lang obrigatório` };
     }
+    const folderArch = validateArchiveFields(folder, `pasta[${i}]`);
+    if (!folderArch.ok) return folderArch;
     if (!Array.isArray(folder.songs)) {
       return { ok: false, error: `pasta[${i}].songs deve ser array` };
     }
@@ -61,6 +82,8 @@ function validateLibrary(library) {
       if (song.content.length > MAX_CONTENT_LEN) {
         return { ok: false, error: `pasta[${i}].songs[${s}].content muito longo` };
       }
+      const songArch = validateArchiveFields(song, `pasta[${i}].songs[${s}]`);
+      if (!songArch.ok) return songArch;
       approx += song.title.length + song.content.length + 16;
       if (approx > MAX_LIBRARY_BYTES) {
         return { ok: false, error: 'biblioteca excede tamanho máximo' };

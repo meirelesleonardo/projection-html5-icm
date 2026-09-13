@@ -43,6 +43,7 @@
               <button id="importCollection" class="dropdown-item" type="button"><i class="fas fa-file-import"></i> Importar coletânea...</button>
               <button id="export" class="dropdown-item" data-lang-str="btn_menu_export"><i class="fas fa-download"></i> Exportar...</button>
               <button id="btnLibraryBackups" class="dropdown-item" type="button"><i class="fas fa-history"></i> Backups da biblioteca...</button>
+              <button id="btnLibraryMaintenance" class="dropdown-item" type="button"><i class="fas fa-archive"></i> Manutenção da biblioteca...</button>
             </div>
           </li>
           <li class="nav-item">
@@ -468,15 +469,56 @@
   <div class="modal fade" id="excluirModal" tabindex="-1" role="dialog" aria-labelledby="excluirModalLabel" aria-hidden="true">
     <div class="modal-dialog" role="document">
       <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="excluirModalLabel">Arquivar</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
         <div class="modal-body">
-          <p></p>
+          <p id="excluirModalMsg"></p>
+          <p class="text-muted small mb-2">O item será arquivado (não apagado). Exclusão definitiva só em Manutenção.</p>
+          <div class="form-group">
+            <label for="excluirConfirmTitle">Digite o título/nome exato para confirmar</label>
+            <input type="text" class="form-control" id="excluirConfirmTitle" autocomplete="off">
+          </div>
+          <div class="form-group mb-0">
+            <label for="excluirReason">Motivo (opcional)</label>
+            <input type="text" class="form-control" id="excluirReason" maxlength="500" placeholder="Ex.: duplicado, erro de importação">
+          </div>
+          <p id="excluirModalStatus" class="small mt-2 mb-0 text-danger" style="display:none;"></p>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" class="close" data-dismiss="modal" aria-label="Close" data-lang-str="cancel">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal" data-lang-str="cancel">
             Cancelar
-          </button>        
-          <button id="confirmDeleteFromTree" type="button" class="btn btn-danger" data-lang-str="delete">Apagar</button>          
-        </div>        
+          </button>
+          <button id="confirmDeleteFromTree" type="button" class="btn btn-warning">Arquivar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="libraryMaintenanceModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Manutenção da biblioteca</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted">Itens arquivados. Restaure ou exclua definitivamente (pede o título + PIN).</p>
+          <h6>Pastas arquivadas</h6>
+          <div id="maintArchivedFolders" class="mb-3"></div>
+          <h6>Louvores arquivados</h6>
+          <div id="maintArchivedSongs"></div>
+          <p id="maintStatus" class="small mt-2 mb-0"></p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Fechar</button>
+          <button type="button" class="btn btn-primary" id="btnMaintRefresh">Atualizar lista</button>
+        </div>
       </div>
     </div>
   </div>

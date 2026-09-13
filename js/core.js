@@ -479,158 +479,139 @@ function returnFlag(lang_code){
   return htmlflag+='.svg" class="flag-sm">';
 }
 
-function atualizaListaArquivos(newData){
-    dados = JSON.parse(newData);
-    
-    localStorage.setItem('data', JSON.stringify(dados));
-
-    var songList = [];
-
-    // Teste de avisos
-    if(localStorage.getItem("warnings") != null)
-        avisos = JSON.parse(localStorage.getItem("warnings"));
-    if(avisos.length > 0){  
-      songList.push({id: "0",text:TRANSLATIONS[config.lang]['warnings'],state:{opened: true},children:[], type:"f-open2"});
-      $.each(avisos, function(i, aviso) {
-        songList[0].children.push({id: "0_"+i, text:aviso.name, type:"warning", data:aviso});
-      });
-    }
-
-    // Teste inicio de utilização de imagens na lista
-    if(localStorage.getItem("images") != null)
-        images = JSON.parse(localStorage.getItem("images"));    
-    if(imagens.length > 0){
-      var idImageFolder = "0";
-      if(songList.length > 0) idImageFolder = "1";
-      songList.push({id: idImageFolder,text:TRANSLATIONS[config.lang]['images'],state:{opened: true},children:[], type:"f-open1"});
-      $.each(imagens, function(i, imagem) {
-        songList[idImageFolder].children.push({id: idImageFolder+"_"+i, text:imagem.name, type:"image", data:imagem});
-      });
-    }
-
-    $('#listaDePastas').html("");
-
-    $.each(dados, function(i, dado) {
-      if(imagens.length > 0) i++;
-      if(avisos.length > 0) i++;
-      if(dado.type == "s"){
-        songList.push({id: ""+i,text:dado.name+returnFlag(dado.lang),state:{opened: false},children:[]});
-        $.each(dado.songs, function(f, louvor) {
-            songList[i].children.push({id: i+"_"+f, text:louvor.title, type:"song", data:louvor});
-        });        
-      }
-
-      $('#listaDePastas').append('<a class="dropdown-item" data-id="'+i+'">'+dado.name+'</a>');
-
-    });
-
-    $('#songList').jstree(true).settings.core.data = songList;
-    $('#songList').jstree(true).refresh();
-
-    $('#title').val(dados[0].songs[0].title);    
-    $('#content').val(dados[0].songs[0].content);
-
-    $('#listaDePastas > a').click(function(){
-      console.log("Tentou criar música");
-
-      var pastaSelecionada = parseInt($(this).attr("data-id"));
-
-      if(imagens.length > 0) pastaSelecionada--;
-      if(avisos.length > 0) pastaSelecionada--;
-
-      dados[pastaSelecionada].songs.push({title: "", content: ""});
-
-      lastAdded = dados[pastaSelecionada].songs.length - 1;
-       
-      atualizaListasFromJSON(dados);
-      markLibraryDirty();
-
-      if(imagens.length > 0) pastaSelecionada++;
-      if(avisos.length > 0) pastaSelecionada++;
-
-      ref_selected = pastaSelecionada+"_"+lastAdded;     
-
-      $('#guias a[href="#edit"]').tab('show');
-
-    });
-
+function treeOffset() {
+  var n = 0;
+  if (avisos && avisos.length > 0) n++;
+  if (imagens && imagens.length > 0) n++;
+  return n;
 }
 
-function atualizaListasFromJSON(newData){
-    dados = newData;
+function buildLibrarySongList(opts) {
+  opts = opts || {};
+  var songList = [];
 
-    var songList = [];
-
-    // Teste inicio de utilização de imagens na lista
-    if(localStorage.getItem("warnings") != null)
-        avisos = JSON.parse(localStorage.getItem("warnings"));
-    if(avisos.length > 0){
-      songList.push({id: "0",text:TRANSLATIONS[config.lang]['warnings'],state:{opened: true},children:[], type:"f-open2"});
-      $.each(avisos, function(i, aviso) {
-        songList[0].children.push({id: "0_"+i, text:aviso.name, type:"warning", data:aviso});
-      });
-    }
-
-    if(localStorage.getItem("images") != null)
-        images = JSON.parse(localStorage.getItem("images")); 
-    if(imagens.length > 0){
-      var idImageFolder = "0";
-      if(songList.length > 0) idImageFolder = "1";
-      songList.push({id: idImageFolder,text:TRANSLATIONS[config.lang]['images'],state:{opened: true},children:[], type:"f-open1"});
-      $.each(imagens, function(i, imagem) {
-        songList[idImageFolder].children.push({id: idImageFolder+"_"+i, text:imagem.name, type:"image", data:imagem});
-      });
-    }
-
-    $('#listaDePastas').html("");
-
-    $.each(dados, function(i, dado) {
-      if(imagens.length > 0) i++;
-      if(avisos.length > 0) i++;
-      if(dado.type == "s"){
-        songList.push({id: ""+i,text:dado.name+returnFlag(dado.lang),state:{opened: false},children:[]});
-        $.each(dado.songs, function(f, louvor) {
-            var newSong = { id: i+"_"+f, text:louvor.title, type:"song", data:louvor };
-            if(ref_selected == i+"_"+f){
-              newSong.state = {selected: true};
-            } 
-            songList[i].children.push(newSong);
-        });        
-      }
-
-      $('#listaDePastas').append('<a class="dropdown-item" data-id="'+i+'">'+dado.name+'</a>');
+  if (localStorage.getItem('warnings') != null) {
+    try {
+      avisos = JSON.parse(localStorage.getItem('warnings'));
+    } catch (e) {}
+  }
+  if (avisos.length > 0) {
+    songList.push({
+      id: '0',
+      text: TRANSLATIONS[config.lang]['warnings'],
+      state: { opened: true },
+      children: [],
+      type: 'f-open2',
     });
+    $.each(avisos, function (i, aviso) {
+      songList[0].children.push({ id: '0_' + i, text: aviso.name, type: 'warning', data: aviso });
+    });
+  }
 
-    // console.log(songList);
+  if (localStorage.getItem('images') != null) {
+    try {
+      images = JSON.parse(localStorage.getItem('images'));
+    } catch (e) {}
+  }
+  if (imagens.length > 0) {
+    var idImageFolder = songList.length > 0 ? '1' : '0';
+    songList.push({
+      id: idImageFolder,
+      text: TRANSLATIONS[config.lang]['images'],
+      state: { opened: true },
+      children: [],
+      type: 'f-open1',
+    });
+    $.each(imagens, function (i, imagem) {
+      songList[idImageFolder].children.push({
+        id: idImageFolder + '_' + i,
+        text: imagem.name,
+        type: 'image',
+        data: imagem,
+      });
+    });
+  }
 
-    $('#songList').jstree(true).settings.core.data = songList;
-    $('#songList').jstree(true).refresh();
+  $('#listaDePastas').html('');
+  var offset = treeOffset();
 
-    $('#listaDePastas > a').click(function(){
-      console.log("Tentou criar música");
+  $.each(dados, function (realIdx, dado) {
+    if (!dado || dado.type !== 's' || dado.archived) return;
+    var treeId = realIdx + offset;
+    var folderNode = {
+      id: '' + treeId,
+      text: dado.name + returnFlag(dado.lang),
+      state: { opened: false },
+      children: [],
+      type: 'default',
+      data: { folderIndex: realIdx },
+    };
+    $.each(dado.songs || [], function (f, louvor) {
+      if (!louvor || louvor.archived) return;
+      var newSong = {
+        id: treeId + '_' + f,
+        text: louvor.title,
+        type: 'song',
+        data: { folderIndex: realIdx, songIndex: f, song: louvor },
+      };
+      if (opts.selectRef && ref_selected == treeId + '_' + f) {
+        newSong.state = { selected: true };
+      }
+      folderNode.children.push(newSong);
+    });
+    songList.push(folderNode);
+    $('#listaDePastas').append(
+      '<a class="dropdown-item" data-id="' + realIdx + '">' + dado.name + '</a>'
+    );
+  });
 
-      var pastaSelecionada = parseInt($(this).attr("data-id"));
+  return songList;
+}
 
-      if(imagens.length > 0) pastaSelecionada--;
-      if(avisos.length > 0) pastaSelecionada--;
+function atualizaListaArquivos(newData) {
+  dados = JSON.parse(newData);
 
-      dados[pastaSelecionada].songs.push({title: "", content: ""});
-      
-      lastAdded = dados[pastaSelecionada].songs.length - 1;  
+  localStorage.setItem('data', JSON.stringify(dados));
 
-      if(imagens.length > 0) pastaSelecionada++;
-      if(avisos.length > 0) pastaSelecionada++;
+  var songList = buildLibrarySongList();
 
-      ref_selected = pastaSelecionada+"_"+lastAdded;
+  $('#songList').jstree(true).settings.core.data = songList;
+  $('#songList').jstree(true).refresh();
 
+  if (dados[0] && dados[0].songs && dados[0].songs[0]) {
+    $('#title').val(dados[0].songs[0].title);
+    $('#content').val(dados[0].songs[0].content);
+  }
+
+  bindListaDePastasCreate();
+}
+
+function bindListaDePastasCreate() {
+  $('#listaDePastas > a')
+    .off('click')
+    .click(function () {
+      var pastaSelecionada = parseInt($(this).attr('data-id'), 10);
+      if (isNaN(pastaSelecionada) || !dados[pastaSelecionada]) return;
+      dados[pastaSelecionada].songs.push({ title: '', content: '' });
+      lastAdded = dados[pastaSelecionada].songs.length - 1;
+      var treeId = pastaSelecionada + treeOffset();
+      ref_selected = treeId + '_' + lastAdded;
       atualizaListasFromJSON(dados);
       markLibraryDirty();
-
-      $('#guias a[href="#edit"]').tab('show');     
-
+      $('#guias a[href="#edit"]').tab('show');
     });
+}
 
-    reloadProjectionList();
+function atualizaListasFromJSON(newData) {
+  dados = newData;
+
+  var songList = buildLibrarySongList({ selectRef: true });
+
+  $('#songList').jstree(true).settings.core.data = songList;
+  $('#songList').jstree(true).refresh();
+
+  bindListaDePastasCreate();
+  reloadProjectionList();
 }
 
 function reloadProjectionList(opts){
@@ -707,14 +688,130 @@ $("#btnAbrirConf").click(function(){
 });
 
 
-$("#deleteFromTree").click(function(){
-  var selecionado = $.jstree.reference('#songList').get_node($.jstree.reference('#songList').get_selected());
-    if(selecionado.parent == "#"){
-      $('#excluirModal').find('.modal-body p').html(TRANSLATIONS[config.lang]['delFolder_msg_start']+"<strong>"+selecionado.text+"</strong>"+TRANSLATIONS[config.lang]['delFolder_msg_end']);
+var _pendingArchive = null;
+
+function libraryApiHeaders(pin, json) {
+  var headers = {};
+  if (json) headers['Content-Type'] = 'application/json';
+  if (pin) headers['X-Room-Pin'] = pin;
+  return headers;
+}
+
+function callLibraryArchiveApi(method, path, body) {
+  return ensureLibraryPin().then(function (pin) {
+    return fetch(path, {
+      method: method,
+      headers: libraryApiHeaders(pin, true),
+      body: JSON.stringify(body),
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        return { ok: r.ok, status: r.status, body: j };
+      });
+    });
+  });
+}
+
+function applyLibraryApiResult(res) {
+  if (res.ok && res.body && res.body.library) {
+    applyLibraryFromObject(res.body.library, {
+      version: res.body.version,
+      dirty: false,
+    });
+    return Promise.resolve();
+  }
+  if (res.ok && res.body && res.body.version != null) {
+    return fetchLibraryFromServer().then(function (payload) {
+      applyLibraryFromObject(payload.library, {
+        version: payload.version,
+        dirty: false,
+      });
+    });
+  }
+  var msg =
+    (res.body && res.body.error) ||
+    'Falha na operação da biblioteca (HTTP ' + res.status + ')';
+  return Promise.reject(new Error(msg));
+}
+
+$("#deleteFromTree").click(function () {
+  var selecionado = $.jstree.reference('#songList').get_node(
+    $.jstree.reference('#songList').get_selected()
+  );
+  if (!selecionado || !selecionado.id) return;
+
+  $('#excluirConfirmTitle').val('');
+  $('#excluirReason').val('');
+  $('#excluirModalStatus').hide().text('');
+
+  if (selecionado.parent == '#') {
+    var firstItem =
+      selecionado.children && selecionado.children[0]
+        ? $.jstree.reference('#songList').get_node(selecionado.children[0])
+        : null;
+    if (firstItem && (firstItem.type === 'warning' || firstItem.type === 'image')) {
+      alert('Avisos e imagens não usam arquivamento de biblioteca.');
+      return;
+    }
+    var folderIndex =
+      selecionado.data && selecionado.data.folderIndex != null
+        ? selecionado.data.folderIndex
+        : parseInt(selecionado.id, 10) - treeOffset();
+    var folder = dados[folderIndex];
+    if (!folder || folder.type !== 's') {
+      alert('Só é possível arquivar pastas de louvores.');
+      return;
+    }
+    _pendingArchive = {
+      kind: 'folder',
+      folderIndex: folderIndex,
+      confirmLabel: folder.name,
+    };
+    $('#excluirModalLabel').text('Arquivar pasta');
+    $('#excluirModalMsg').html(
+      'Arquivar a pasta <strong>' +
+        $('<div>').text(folder.name).html() +
+        '</strong> e ocultá-la da lista?'
+    );
+  } else if (selecionado.type == 'song') {
+    var folderIndexSong =
+      selecionado.data && selecionado.data.folderIndex != null
+        ? selecionado.data.folderIndex
+        : pastaAtiva;
+    var songIndex =
+      selecionado.data && selecionado.data.songIndex != null
+        ? selecionado.data.songIndex
+        : louvorAtivo;
+    var song = dados[folderIndexSong] && dados[folderIndexSong].songs[songIndex];
+    if (!song) return;
+    _pendingArchive = {
+      kind: 'song',
+      folderIndex: folderIndexSong,
+      songIndex: songIndex,
+      confirmLabel: song.title,
+    };
+    $('#excluirModalLabel').text('Arquivar louvor');
+    $('#excluirModalMsg').html(
+      'Arquivar o louvor <strong>' +
+        $('<div>').text(song.title).html() +
+        '</strong>?'
+    );
+  } else if (selecionado.type == 'image' || selecionado.type == 'warning') {
+    // Keep legacy local-only delete for images/warnings
+    if (selecionado.type == 'image') {
+      var idImage = selecionado.id.split('_')[1];
+      imagens.splice(idImage, 1);
+      localStorage.setItem('images', JSON.stringify(imagens));
     } else {
-      $('#excluirModal').find('.modal-body p').html(TRANSLATIONS[config.lang]['delSong_msg_start']+"<strong>"+selecionado.text+"</strong> ?");
-    }    
-    $('#excluirModal').modal('toggle');
+      var idWarning = selecionado.id.split('_')[1];
+      avisos.splice(idWarning, 1);
+      localStorage.setItem('warnings', JSON.stringify(avisos));
+    }
+    atualizaListasFromJSON(dados);
+    return;
+  } else {
+    return;
+  }
+  $('#excluirModal').modal('show');
 });
 
 $("#newFolder").click(function(){   
@@ -734,41 +831,54 @@ $("#confirmMakeFolder").click(function(){
 });
 
 
-$("#confirmDeleteFromTree").click(function(){
-  var selecionado = $.jstree.reference('#songList').get_node($.jstree.reference('#songList').get_selected());
-    if(selecionado.parent == "#"){
-      var firstItem = $.jstree.reference('#songList').get_node(selecionado.children[0]);
-      console.log(firstItem.type);
-      if(firstItem.type == "song") {        
-        var folderDelId = parseInt(selecionado.id);
-        if(avisos.length > 0) folderDelId--;
-        if(imagens.length > 0) folderDelId--;
-        dados.splice(folderDelId, 1);
-      }
-    } else {
-      console.log(selecionado);
-      if(selecionado.type == "song"){
-        dados[pastaAtiva].songs.splice(louvorAtivo, 1);
-      }      
-      if(selecionado.type == "image"){
-        var idImage = selecionado.id.split("_")[1];
-        imagens.splice(idImage, 1);
-      }
-      if(selecionado.type == "warning"){
-        var idWarning = selecionado.id.split("_")[1];
-        avisos.splice(idWarning, 1);
-      }
-      ref_selected = "0_0";
-    }
-    localStorage.setItem('warnings', JSON.stringify(avisos));
-    localStorage.setItem('data', JSON.stringify(dados));
-    atualizaListasFromJSON(dados);    
-    if (dados[0] && dados[0].songs && dados[0].songs[0]) {
-      $('#title').val(dados[0].songs[0].title);    
-      $('#content').val(dados[0].songs[0].content);
-    }
-    markLibraryDirty();
-    $('#excluirModal').modal('toggle');   
+$("#confirmDeleteFromTree").click(function () {
+  if (!_pendingArchive) {
+    $('#excluirModal').modal('hide');
+    return;
+  }
+  if (!libraryServerMode) {
+    alert('Arquivar só funciona via http(s):// no servidor.');
+    return;
+  }
+  var typed = ($('#excluirConfirmTitle').val() || '').trim();
+  if (typed !== String(_pendingArchive.confirmLabel || '').trim()) {
+    $('#excluirModalStatus')
+      .text('O texto digitado não confere com o título/nome.')
+      .show();
+    return;
+  }
+  var reason = ($('#excluirReason').val() || '').trim();
+  var btn = $('#confirmDeleteFromTree');
+  btn.prop('disabled', true);
+  $('#excluirModalStatus').hide();
+
+  var path =
+    _pendingArchive.kind === 'folder'
+      ? '/api/library/folders/archive'
+      : '/api/library/songs/archive';
+  var body = {
+    version: libraryVersion,
+    folderIndex: _pendingArchive.folderIndex,
+    confirmTitle: typed,
+  };
+  if (_pendingArchive.kind === 'song') body.songIndex = _pendingArchive.songIndex;
+  if (reason) body.reason = reason;
+
+  callLibraryArchiveApi('POST', path, body)
+    .then(applyLibraryApiResult)
+    .then(function () {
+      _pendingArchive = null;
+      $('#excluirModal').modal('hide');
+      ref_selected = '0_0';
+    })
+    .catch(function (e) {
+      $('#excluirModalStatus')
+        .text((e && e.message) || 'Falha ao arquivar')
+        .show();
+    })
+    .finally(function () {
+      btn.prop('disabled', false);
+    });
 });
 
 $("#save").click(function(){
@@ -929,6 +1039,9 @@ function generateLiveList(){
   $.each(projecao, function(i, item) { 
     if(item.type == "s"){
       if (!dados[item.folderId] || !dados[item.folderId].songs || !dados[item.folderId].songs[item.id]) {
+        return;
+      }
+      if (dados[item.folderId].archived || dados[item.folderId].songs[item.id].archived) {
         return;
       }
       var lang = "-"+dados[item.folderId].lang;
@@ -1323,20 +1436,20 @@ $(function () {
 
   $('#songList').on("changed.jstree", function (e, data) {
     if(data.node != undefined && data.node != null && data.node.data != null && data.node.type == 'song'){
-        louvor = data.node.data;        
-        pastaAtiva = parseInt(data.node.id.split("_")[0]);        
-        louvorAtivo = parseInt(data.node.id.split("_")[1]);
-
-        if(avisos.length > 0){
-          pastaAtiva--;
+        var meta = data.node.data;
+        var songObj = meta.song || meta;
+        if (meta.folderIndex != null) pastaAtiva = meta.folderIndex;
+        else {
+          pastaAtiva = parseInt(data.node.id.split("_")[0], 10);
+          if(avisos.length > 0) pastaAtiva--;
+          if(imagens.length > 0) pastaAtiva--;
         }
-        if(imagens.length > 0){
-          pastaAtiva--;
-        }
-        // ref_selected = pastaAtiva+"_"+louvorAtivo;
+        if (meta.songIndex != null) louvorAtivo = meta.songIndex;
+        else louvorAtivo = parseInt(data.node.id.split("_")[1], 10);
 
-        $('#title').val(louvor.title);    
-        $('#content').val(louvor.content);
+        louvor = songObj;
+        $('#title').val(songObj.title);    
+        $('#content').val(songObj.content);
     }
   });
 
