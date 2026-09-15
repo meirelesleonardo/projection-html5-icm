@@ -8,6 +8,8 @@
     slideIndex: 0,
     fontSize: 2,
     playlist: [],
+    playlistIndex: -1,
+    frozen: false,
     library: null,
     youControl: false,
     role: 'controller',
@@ -82,6 +84,8 @@
         pin: $('pinInput') ? $('pinInput').value : '',
         role: state.role,
         playlist: state.playlist,
+        playlistIndex: state.playlistIndex,
+        frozen: state.frozen,
         slidesHtml: state.slidesHtml,
         slideIndex: state.slideIndex,
         fontSize: state.fontSize,
@@ -108,11 +112,14 @@
       sessionStorage.removeItem(SESSION_KEY);
     } catch (e) {}
     state.playlist = [];
+    state.playlistIndex = -1;
+    state.frozen = false;
     state.slidesHtml = '';
     state.slideIndex = 0;
     videoBgSrc = null;
     renderPlaylist();
     renderSlides();
+    updateFreezeUi();
     updateBgStatus();
   }
 
@@ -160,6 +167,8 @@
   }
 
   function flushControlWaiters() {
+    var wasFrozen = state.frozen;
+    clearFrozenOnControl(wasFrozen);
     var queue = controlWaiters.slice();
     controlWaiters = [];
     queue.forEach(function (fn) {
@@ -170,6 +179,113 @@
       }
     });
     updateControlUi();
+  }
+
+  function clearFrozenOnControl(doFlush) {
+    if (!state.frozen) return;
+    state.frozen = false;
+    updateFreezeUi();
+    schedulePersist();
+    if (doFlush) {
+      ensureControl(function () {
+        sendProjectionToView({ force: true });
+      });
+    }
+  }
+
+  function setFrozen(on) {
+    var next = !!on;
+    if (next === state.frozen) {
+      updateFreezeUi();
+      return;
+    }
+    state.frozen = next;
+    updateFreezeUi();
+    schedulePersist();
+    if (!next) {
+      // Descongelar: envia o que está preparado no celular
+      ensureControl(function () {
+        sendProjectionToView({ force: true });
+      });
+      setStatus(
+        $('appStatus'),
+        'Descongelado — enviando à tela',
+        'ok'
+      );
+    } else {
+      setStatus(
+        $('appStatus'),
+        'Congelado — prepare no celular; Descongelar envia à tela',
+        'ok'
+      );
+    }
+  }
+
+  function updateFreezeUi() {
+    var btn = $('btnFreeze');
+    var box = $('previewBox');
+    if (btn) {
+      btn.textContent = state.frozen ? 'Descongelar' : 'Congelar';
+      btn.classList.toggle('frozen-on', !!state.frozen);
+    }
+    if (box) box.classList.toggle('frozen', !!state.frozen);
+  }
+
+  /** Envia o deck local atual ao projetor (respeita freeze, salvo force). */
+  function sendProjectionToView(opts) {
+    opts = opts || {};
+    if (state.frozen && !opts.force) return false;
+    if (!transport) return false;
+    var html = state.slidesHtml || '';
+    sendCmd('reloadReveal', html);
+    sendCmd('changeSlide', state.slideIndex || 0);
+    sendCmd('hidePairing', true);
+    if (opts.asLogo) {
+      sendCmd('showLogo', html);
+    }
+    if (opts.playVideoSrc) {
+      sendCmd('playVideo', { src: opts.playVideoSrc, currentTime: 0 });
+    } else if (isVideoProjection()) {
+      var m = html.match(/data-video-src="([^"]+)"/);
+      if (m) {
+        sendCmd('playVideo', {
+          src: m[1].replace(/&amp;/g, '&'),
+          currentTime: 0,
+        });
+      }
+    }
+    return true;
+  }
+
+  function applyLocalDeck(html, opts) {
+    opts = opts || {};
+    state.slidesHtml = html || '';
+    var slides = parseSlides(state.slidesHtml);
+    slideCount = slides.length;
+    var start = 0;
+    if (opts.startSlide === 'last') start = Math.max(0, slides.length - 1);
+    else if (typeof opts.startSlide === 'number') {
+      start = Math.max(0, Math.min(Math.max(slides.length - 1, 0), opts.startSlide));
+    } else if (opts.keepSlideIndex) {
+      start = Math.max(0, Math.min(Math.max(slides.length - 1, 0), state.slideIndex || 0));
+    }
+    state.slideIndex = slides.length ? start : 0;
+    if (Object.prototype.hasOwnProperty.call(opts, 'playlistIndex')) {
+      state.playlistIndex = opts.playlistIndex;
+    } else if (!opts.keepPlaylistIndex) {
+      state.playlistIndex = -1;
+    }
+    renderSlides();
+    if (opts.renderPlaylist !== false) renderPlaylist();
+    if (opts.showLive !== false) showTab('live');
+    schedulePersist();
+    if (state.frozen) {
+      setStatus(
+        $('appStatus'),
+        'Preparando (congelado) — Descongelar envia à tela',
+        'ok'
+      );
+    }
   }
 
   function sendCmd(fn, data) {
@@ -254,9 +370,13 @@
       box.appendChild(row);
     });
     var cur = slides[state.slideIndex];
-    $('previewBox').textContent = cur
+    var preview = $('previewBox');
+    var label = cur
       ? cur.text || '(slide ' + state.slideIndex + ')'
       : 'Sem slides — adicione da lista ou biblioteca';
+    if (state.frozen) label = '❄ Prep: ' + label;
+    preview.textContent = label;
+    updateFreezeUi();
     updateLiveVideoControls();
     updateControlUi();
     schedulePersist();
@@ -301,18 +421,36 @@
           ? 'Você controla'
           : 'Outro aparelho controla — toque Assumir comando'
       : 'Desconectado';
+    if (state.frozen && transport && transport.connected) {
+      label = 'Congelado — prepare no celular; Descongelar envia à tela';
+    }
     setStatus(
       $('appStatus'),
       label + (baseUrl ? ' · ' + baseUrl.replace(/^https?:\/\//, '') : ''),
-      transport && transport.connected ? (state.youControl || state.role === 'observer' ? 'ok' : '') : 'bad'
+      transport && transport.connected
+        ? state.frozen
+          ? 'ok'
+          : state.youControl || state.role === 'observer'
+            ? 'ok'
+            : ''
+        : 'bad'
     );
   }
 
   function gotoSlide(i) {
     ensureControl(function () {
       state.slideIndex = i;
-      sendCmd('changeSlide', i);
       renderSlides();
+      if (!state.frozen) {
+        sendCmd('changeSlide', i);
+      } else {
+        setStatus(
+          $('appStatus'),
+          'Preparando (congelado) — Descongelar envia à tela',
+          'ok'
+        );
+      }
+      schedulePersist();
     });
   }
 
@@ -329,31 +467,30 @@
 
   LOGO_SLIDE_HTML = buildLogoSlide();
 
-  function projectHtml(html) {
+  function projectHtml(html, opts) {
+    opts = opts || {};
     ensureControl(function () {
-      state.slidesHtml = html || '';
-      state.slideIndex = 0;
-      sendCmd('reloadReveal', state.slidesHtml);
-      sendCmd('changeSlide', 0);
-      sendCmd('hidePairing', true);
-      renderSlides();
-      showTab('live');
-      schedulePersist();
+      applyLocalDeck(html, opts);
+      if (!state.frozen) {
+        sendProjectionToView();
+      }
     });
   }
 
   function showLogoInterrupt() {
     ensureControl(function () {
-      stopStream();
-      sendCmd('pauseVideo', {});
-      var html = buildLogoSlide();
-      state.slidesHtml = html;
-      state.slideIndex = 0;
-      sendCmd('showLogo', html);
-      sendCmd('hidePairing', true);
-      renderSlides();
-      showTab('live');
-      schedulePersist();
+      if (!state.frozen) {
+        stopStream();
+        sendCmd('pauseVideo', {});
+      }
+      applyLocalDeck(buildLogoSlide(), {
+        startSlide: 'first',
+        keepPlaylistIndex: true,
+      });
+      if (!state.frozen) {
+        sendCmd('showLogo', state.slidesHtml);
+        sendCmd('hidePairing', true);
+      }
     });
   }
 
@@ -481,18 +618,21 @@
     );
   }
 
-  function projectVideo(src, title) {
+  function projectVideo(src, title, opts) {
+    opts = opts || {};
     ensureControl(function () {
       state._videoTitle = title || 'Vídeo';
       var html = videoSlide(src, state._videoTitle);
-      state.slidesHtml = html;
-      state.slideIndex = 0;
-      sendCmd('reloadReveal', html);
-      sendCmd('changeSlide', 0);
-      sendCmd('hidePairing', true);
-      sendCmd('playVideo', { src: src, currentTime: 0 });
-      renderSlides();
-      showTab('live');
+      var deckOpts = { startSlide: 'first' };
+      if (Object.prototype.hasOwnProperty.call(opts, 'playlistIndex')) {
+        deckOpts.playlistIndex = opts.playlistIndex;
+      } else if (opts.keepPlaylistIndex) {
+        deckOpts.keepPlaylistIndex = true;
+      }
+      applyLocalDeck(html, deckOpts);
+      if (!state.frozen) {
+        sendProjectionToView({ playVideoSrc: src });
+      }
     });
   }
 
@@ -500,12 +640,12 @@
     ensureControl(function () {
       if (fit) state.videoFit = fit;
       if (fullscreen != null) state.videoFullscreen = !!fullscreen;
-      // Só estilos no projetor — não remonta o <video> (evita reinício)
-      sendCmd('setVideoFit', {
-        fit: state.videoFit,
-        fullscreen: state.videoFullscreen,
-      });
-      // Atualiza HTML local (sessão/preview) sem reloadReveal no projetor
+      if (!state.frozen) {
+        sendCmd('setVideoFit', {
+          fit: state.videoFit,
+          fullscreen: state.videoFullscreen,
+        });
+      }
       var m = state.slidesHtml && state.slidesHtml.match(/data-video-src="([^"]+)"/);
       if (m) {
         var src = m[1].replace(/&amp;/g, '&');
@@ -522,6 +662,121 @@
     });
   }
 
+  function resolvePlaylistItemHtml(item) {
+    if (!item) return null;
+    if (item.type === 'video') {
+      return { kind: 'video', src: item.src, title: item.title };
+    }
+    if (item.html) {
+      return { kind: 'html', html: item.html };
+    }
+    if (item.song) {
+      return { kind: 'html', html: songToHtml(item.song) };
+    }
+    if (
+      item.type === 'song' &&
+      item.folderId != null &&
+      item.id != null &&
+      state.library &&
+      state.library[item.folderId] &&
+      state.library[item.folderId].songs &&
+      state.library[item.folderId].songs[item.id]
+    ) {
+      var libSong = state.library[item.folderId].songs[item.id];
+      return {
+        kind: 'html',
+        html: songToHtml({
+          name: libSong.title || item.title,
+          title: libSong.title || item.title,
+          content: libSong.content || '',
+        }),
+      };
+    }
+    if (item.type === 'deck' && item.slides) {
+      return { kind: 'html', html: deckToHtml(item.slides, item.title) };
+    }
+    if (item.type === 'bible') {
+      if (item.html) return { kind: 'html', html: item.html };
+      if (item.bible || (item.b != null && item.c != null)) {
+        var bb = item.bible || item;
+        if (typeof MobileBible !== 'undefined' && MobileBible.scriptureToHtml) {
+          var closing =
+            '<section data-background="' +
+            BG_DEFAULT +
+            '" data-state="show_backlay1">' +
+            '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
+            '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>\n';
+          return {
+            kind: 'html',
+            html: MobileBible.scriptureToHtml({
+              version: bb.version || 'acf',
+              b: bb.b,
+              c: bb.c,
+              from: bb.from,
+              to: bb.to,
+              bg: '#000000',
+              closingHtml: closing,
+            }),
+          };
+        }
+      }
+      return { kind: 'html', html: buildLogoSlide() };
+    }
+    if (item.type === 'logo') {
+      return { kind: 'html', html: item.html || buildLogoSlide() };
+    }
+    return null;
+  }
+
+  function projectPlaylistItem(idx, opts) {
+    opts = opts || {};
+    if (idx < 0 || idx >= state.playlist.length) return false;
+    var resolved = resolvePlaylistItemHtml(state.playlist[idx]);
+    if (!resolved) return false;
+    var startSlide = opts.startSlide != null ? opts.startSlide : 'first';
+    if (resolved.kind === 'video') {
+      if (!resolved.src) return false;
+      projectVideo(resolved.src, resolved.title, {
+        playlistIndex: idx,
+      });
+      return true;
+    }
+    projectHtml(resolved.html, {
+      playlistIndex: idx,
+      startSlide: startSlide,
+    });
+    return true;
+  }
+
+  function projectPlaylistItemFrom(idx, direction, startSlide) {
+    var i = idx;
+    while (i >= 0 && i < state.playlist.length) {
+      if (projectPlaylistItem(i, { startSlide: startSlide })) return true;
+      i += direction;
+    }
+    return false;
+  }
+
+  function navigateNext() {
+    if (state.slideIndex < slideCount - 1) {
+      gotoSlide(state.slideIndex + 1);
+      return;
+    }
+    if (state.playlistIndex >= 0) {
+      projectPlaylistItemFrom(state.playlistIndex + 1, 1, 'first');
+    }
+  }
+
+  function navigatePrev() {
+    if (state.slideIndex > 0) {
+      gotoSlide(state.slideIndex - 1);
+      return;
+    }
+    if (state.playlistIndex > 0) {
+      projectPlaylistItemFrom(state.playlistIndex - 1, -1, 'last');
+    }
+  }
+
   function renderPlaylist() {
     var box = $('playlistBox');
     box.innerHTML = '';
@@ -532,7 +787,7 @@
     }
     state.playlist.forEach(function (item, idx) {
       var div = document.createElement('div');
-      div.className = 'list-item';
+      div.className = 'list-item' + (idx === state.playlistIndex ? ' active' : '');
       var body = document.createElement('div');
       body.innerHTML =
         '<strong>' +
@@ -541,61 +796,7 @@
         escapeHtml(item.type || 'song') +
         '</small>';
       body.addEventListener('click', function () {
-        if (item.type === 'video') {
-          projectVideo(item.src, item.title);
-        } else if (item.html) {
-          projectHtml(item.html);
-        } else if (item.song) {
-          projectHtml(songToHtml(item.song));
-        } else if (
-          item.type === 'song' &&
-          item.folderId != null &&
-          item.id != null &&
-          state.library &&
-          state.library[item.folderId] &&
-          state.library[item.folderId].songs &&
-          state.library[item.folderId].songs[item.id]
-        ) {
-          var libSong = state.library[item.folderId].songs[item.id];
-          projectHtml(
-            songToHtml({
-              name: libSong.title || item.title,
-              title: libSong.title || item.title,
-              content: libSong.content || '',
-            })
-          );
-        } else if (item.type === 'deck' && item.slides) {
-          projectHtml(deckToHtml(item.slides, item.title));
-        } else if (item.type === 'bible') {
-          if (item.html) {
-            projectHtml(item.html);
-          } else if (item.bible || (item.b != null && item.c != null)) {
-            var bb = item.bible || item;
-            if (typeof MobileBible !== 'undefined' && MobileBible.scriptureToHtml) {
-              var closing =
-                '<section data-background="' +
-                BG_DEFAULT +
-                '" data-state="show_backlay1">' +
-                '<style>.show_backlay1 header.backlay1-pt-br .backlay_1-pt-br{display:block}</style>' +
-                '<h1>Maranata</h1><h3>O Senhor Jesus Vem</h3></section>\n';
-              projectHtml(
-                MobileBible.scriptureToHtml({
-                  version: bb.version || 'acf',
-                  b: bb.b,
-                  c: bb.c,
-                  from: bb.from,
-                  to: bb.to,
-                  bg: '#000000',
-                  closingHtml: closing,
-                })
-              );
-            }
-          } else {
-            projectHtml(buildLogoSlide());
-          }
-        } else if (item.type === 'logo') {
-          projectHtml(item.html || buildLogoSlide());
-        }
+        projectPlaylistItem(idx, { startSlide: 'first' });
       });
       div.appendChild(body);
 
@@ -1669,10 +1870,10 @@
   });
 
   $('btnPrev').addEventListener('click', function () {
-    if (state.slideIndex > 0) gotoSlide(state.slideIndex - 1);
+    navigatePrev();
   });
   $('btnNext').addEventListener('click', function () {
-    if (state.slideIndex < slideCount - 1) gotoSlide(state.slideIndex + 1);
+    navigateNext();
   });
 
   var touchX = null;
@@ -1688,12 +1889,18 @@
     function (e) {
       if (touchX == null) return;
       var dx = e.changedTouches[0].screenX - touchX;
-      if (dx > 60) $('btnPrev').click();
-      if (dx < -60) $('btnNext').click();
+      if (dx > 60) navigatePrev();
+      if (dx < -60) navigateNext();
       touchX = null;
     },
     { passive: true }
   );
+
+  if ($('btnFreeze')) {
+    $('btnFreeze').addEventListener('click', function () {
+      setFrozen(!state.frozen);
+    });
+  }
 
   $('btnTakeControl').addEventListener('click', function () {
     if (transport) transport.takeControl();
@@ -1704,6 +1911,14 @@
     });
   });
   $('btnBlack').addEventListener('click', function () {
+    if (state.frozen) {
+      setStatus(
+        $('appStatus'),
+        'Congelado — Descongelar antes da tela preta',
+        'bad'
+      );
+      return;
+    }
     ensureControl(function () {
       sendCmd('clearProjection', true);
     });
@@ -1927,12 +2142,16 @@
       if (saved.pin && $('pinInput')) $('pinInput').value = saved.pin;
       if (saved.role && $('roleSelect')) $('roleSelect').value = saved.role;
       state.playlist = Array.isArray(saved.playlist) ? saved.playlist : [];
+      state.playlistIndex =
+        saved.playlistIndex != null ? Number(saved.playlistIndex) : -1;
+      state.frozen = !!saved.frozen;
       state.slidesHtml = saved.slidesHtml || '';
       state.slideIndex = saved.slideIndex || 0;
       state.fontSize = saved.fontSize != null ? saved.fontSize : 2;
       state.videoFit = saved.videoFit || 'contain';
       state.videoFullscreen = !!saved.videoFullscreen;
       videoBgSrc = saved.videoBgSrc || null;
+      updateFreezeUi();
       if (saved.baseUrl) {
         $('hostInput').value = String(saved.baseUrl).replace(/^https?:\/\//, '');
       }
