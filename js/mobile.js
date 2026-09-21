@@ -24,6 +24,7 @@
   var fileStreamVideo = null;
   var qrStream = null;
   var videoBgSrc = null;
+  var cachedVideos = [];
   var controlWaiters = [];
   var BG_DEFAULT = 'imagens/fundo.jpg';
   var LOGO_SLIDE_HTML = null;
@@ -1410,6 +1411,77 @@
     loadVideos();
   }
 
+  function renderVideoList(filter) {
+    var box = $('videoList');
+    if (!box) return;
+    box.innerHTML = '';
+    var q = (filter || '').toLowerCase();
+    var videos = (cachedVideos || []).filter(function (v) {
+      if (!q) return true;
+      return (v.name || '').toLowerCase().indexOf(q) >= 0;
+    });
+    if (!videos.length) {
+      box.innerHTML = cachedVideos.length
+        ? '<p class="status">Nenhum vídeo corresponde à busca</p>'
+        : '<p class="status">Nenhum MP4 em media/videos</p>';
+      return;
+    }
+    videos.forEach(function (v) {
+      var wrap = document.createElement('div');
+      wrap.className = 'card';
+      wrap.style.padding = '0.65rem';
+      wrap.style.marginBottom = '0.5rem';
+      var title = document.createElement('div');
+      title.style.marginBottom = '0.35rem';
+      title.innerHTML = '<strong>' + escapeHtml(v.name) + '</strong>';
+      wrap.appendChild(title);
+
+      var add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'secondary';
+      add.textContent = 'Adicionar à lista';
+      add.addEventListener('click', function () {
+        var item = { type: 'video', title: v.name, src: v.src };
+        state.playlist.push(item);
+        syncPlaylist();
+        renderPlaylist();
+        setStatus($('appStatus'), 'Adicionado à lista: ' + (v.name || 'vídeo'), 'ok');
+        schedulePersist();
+      });
+      wrap.appendChild(add);
+
+      var bg = document.createElement('button');
+      bg.type = 'button';
+      bg.className = 'secondary';
+      bg.textContent = 'Usar como fundo de letra';
+      bg.addEventListener('click', function () {
+        videoBgSrc = v.src;
+        updateBgStatus();
+      });
+      wrap.appendChild(bg);
+
+      var ren = document.createElement('button');
+      ren.type = 'button';
+      ren.className = 'secondary';
+      ren.textContent = 'Renomear';
+      ren.addEventListener('click', function () {
+        renameVideo(v.name);
+      });
+      wrap.appendChild(ren);
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'danger';
+      del.textContent = 'Apagar';
+      del.addEventListener('click', function () {
+        deleteVideo(v.name, v.src);
+      });
+      wrap.appendChild(del);
+
+      box.appendChild(wrap);
+    });
+  }
+
   function loadVideos() {
     updateBgStatus();
     fetch(baseUrl + '/api/media/list')
@@ -1417,60 +1489,9 @@
         return r.json();
       })
       .then(function (data) {
-        var box = $('videoList');
-        box.innerHTML = '';
-        (data.videos || []).forEach(function (v) {
-          var wrap = document.createElement('div');
-          wrap.className = 'card';
-          wrap.style.padding = '0.65rem';
-          wrap.style.marginBottom = '0.5rem';
-          var title = document.createElement('div');
-          title.style.marginBottom = '0.35rem';
-          title.innerHTML = '<strong>' + escapeHtml(v.name) + '</strong>';
-          wrap.appendChild(title);
-
-          var play = document.createElement('button');
-          play.className = 'secondary';
-          play.textContent = 'Projetar';
-          play.addEventListener('click', function () {
-            var item = { type: 'video', title: v.name, src: v.src };
-            state.playlist.push(item);
-            syncPlaylist();
-            renderPlaylist();
-            projectVideo(v.src, v.name);
-          });
-          wrap.appendChild(play);
-
-          var bg = document.createElement('button');
-          bg.className = 'secondary';
-          bg.textContent = 'Usar como fundo de letra';
-          bg.addEventListener('click', function () {
-            videoBgSrc = v.src;
-            updateBgStatus();
-          });
-          wrap.appendChild(bg);
-
-          var ren = document.createElement('button');
-          ren.className = 'secondary';
-          ren.textContent = 'Renomear';
-          ren.addEventListener('click', function () {
-            renameVideo(v.name);
-          });
-          wrap.appendChild(ren);
-
-          var del = document.createElement('button');
-          del.className = 'danger';
-          del.textContent = 'Apagar';
-          del.addEventListener('click', function () {
-            deleteVideo(v.name, v.src);
-          });
-          wrap.appendChild(del);
-
-          box.appendChild(wrap);
-        });
-        if (!(data.videos || []).length) {
-          box.innerHTML = '<p class="status">Nenhum MP4 em media/videos</p>';
-        }
+        cachedVideos = data.videos || [];
+        var search = $('mediaSearch');
+        renderVideoList(search ? search.value : '');
       });
   }
 
@@ -1993,6 +2014,11 @@
   $('libSearch').addEventListener('input', function () {
     renderLibrary($('libSearch').value);
   });
+  if ($('mediaSearch')) {
+    $('mediaSearch').addEventListener('input', function () {
+      renderVideoList($('mediaSearch').value);
+    });
+  }
   if ($('btnDeckUpload')) {
     $('btnDeckUpload').addEventListener('click', function () {
       uploadDeck();
@@ -2017,7 +2043,8 @@
           state.playlist.push(item);
           syncPlaylist();
           renderPlaylist();
-          projectVideo(lastRes.src, lastRes.name);
+          setStatus($('appStatus'), 'Adicionado à lista: ' + (lastRes.name || 'vídeo'), 'ok');
+          schedulePersist();
         }
         if (status) {
           setStatus(status, files.length + ' vídeo(s) enviado(s)', 'ok');

@@ -30,7 +30,7 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 - **Mídia:**
   - Enviar um ou mais vídeos (Android: use **Arquivos** e navegue até a pasta; o navegador **não** abre pasta fixa sozinho).
   - Nome original no PC; se já existir: `louvor_2.mp4`, etc.
-  - **Projetar**, **Renomear**, **Apagar**; fundo de letra.
+  - **Localizar** filtra a lista por nome; **Adicionar à lista** (não transmite — projete pela Lista), **Renomear**, **Apagar**; fundo de letra.
   - **Transmitir câmera** / arquivo (WebRTC): exige **HTTPS**; senão use upload.
   - Contain / Cover (só enquadramento) / Tela cheia / **Som** / **Mudo**.
 - **Mais:** assumir comando, QR no projetor, tela preta, logo, fonte, perfil 720p/1080p, **Tela cheia View** / **Sair tela cheia**, **Limpar sessão**.
