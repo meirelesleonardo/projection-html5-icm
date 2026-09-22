@@ -13,6 +13,9 @@ const {
 } = require('./numbering');
 const { findFolderByName, buildMergePlan, applyMergePlan } = require('./merge-engine');
 const { validateLibrary } = require('../library-validate');
+const { normalizeManualPaste } = require('../../tools/louvor-import/lib/manual-paste');
+
+const MANUAL_FOLDER_DEFAULT = 'Avulso Manual';
 
 function detectTypeFromName(name) {
   const ext = path.extname(name || '').toLowerCase();
@@ -467,6 +470,127 @@ function createImportService(deps) {
     return libraryStore.saveAtomic(library, ver);
   }
 
+  /**
+   * One-shot manual paste import into a fixed folder (default Avulso Manual).
+   * Expands CORO / "repetir …" via normalizeManualPaste, then merge+save.
+   */
+  function importManualText(opts = {}) {
+    const libraryName = String(opts.libraryName || MANUAL_FOLDER_DEFAULT).trim() || MANUAL_FOLDER_DEFAULT;
+    const lang = String(opts.lang || 'pt').trim() || 'pt';
+    const normalized = normalizeManualPaste(opts.text);
+    const song = { title: normalized.title, content: normalized.content };
+    const v = validateOfficialSong(song);
+    if (!v.ok) {
+      const err = new Error(v.errors.join('; '));
+      err.status = 400;
+      err.code = 'VALIDATION';
+      throw err;
+    }
+
+    const loaded = loadLibrarySafe();
+    const matches = findFolderByName(loaded.library, libraryName);
+    let targetFolder = null;
+    if (matches.length === 1) targetFolder = matches[0].folder;
+    else if (matches.length > 1) {
+      targetFolder =
+        matches.find((m) => m.folder.name === libraryName)?.folder || null;
+      if (!targetFolder) {
+        const err = new Error(
+          `várias pastas similares a "${libraryName}"; use o nome exato`
+        );
+        err.status = 409;
+        err.code = 'AMBIGUOUS_FOLDER';
+        throw err;
+      }
+    }
+
+    const extraTitles = importRepo.collectAppliedImportTitles
+      ? importRepo.collectAppliedImportTitles()
+      : [];
+    const allocImportNumber = () =>
+      getNextImportNumber(targetFolder || { songs: [] }, extraTitles);
+
+    const incoming = [
+      {
+        key: 'manual-0',
+        title: song.title,
+        content: song.content,
+        selected: true,
+        needsReview: false,
+      },
+    ];
+    const plan = buildMergePlan(incoming, targetFolder, {
+      decisions: {},
+      selection: { 'manual-0': true },
+      allocImportNumber,
+    });
+
+    const item = plan.items[0];
+    if (!item) {
+      const err = new Error('falha ao analisar louvor');
+      err.status = 500;
+      throw err;
+    }
+    if (item.status === 'CONFLICT' || item.status === 'REVIEW' || item.status === 'ERROR') {
+      const err = new Error(
+        item.status === 'CONFLICT'
+          ? 'Já existe louvor com esse nome/número e conteúdo diferente. Resolva no desktop ou altere o título.'
+          : `Não foi possível importar (${item.status})`
+      );
+      err.status = 409;
+      err.code = 'UNRESOLVED';
+      err.item = item;
+      throw err;
+    }
+
+    if (item.status === 'UNCHANGED') {
+      return {
+        ok: true,
+        libraryName,
+        title: item.resolvedTitle,
+        content: item.resolvedContent,
+        status: 'UNCHANGED',
+        version: loaded.version,
+        updatedAt: loaded.updatedAt,
+        warnings: normalized.warnings,
+      };
+    }
+
+    let nextLibrary;
+    try {
+      nextLibrary = applyMergePlan(loaded.library, libraryName, plan, {
+        lang,
+        type: 's',
+      });
+    } catch (e) {
+      e.status = e.status || 400;
+      throw e;
+    }
+
+    const check = validateLibrary(nextLibrary);
+    if (!check.ok) {
+      const err = new Error(check.error);
+      err.status = 400;
+      err.code = 'VALIDATION';
+      throw err;
+    }
+
+    const expectedVersion =
+      opts.expectedVersion != null ? opts.expectedVersion : loaded.version;
+    const result = libraryStore.saveAtomic(nextLibrary, expectedVersion);
+
+    return {
+      ok: true,
+      libraryName,
+      title: item.resolvedTitle,
+      content: item.resolvedContent,
+      status: item.status,
+      version: result.version,
+      updatedAt: result.updatedAt,
+      warnings: normalized.warnings,
+    };
+  }
+
   return {
     startFromUpload,
     processExtraction,
@@ -477,10 +601,11 @@ function createImportService(deps) {
     getJobDetail,
     listJobs: () => importRepo.listJobs(),
     restoreBackup,
+    importManualText,
     detectTypeFromName,
     suggestLibraryNameFromFile,
     parseSongIdentity,
   };
 }
 
-module.exports = { createImportService, detectTypeFromName };
+module.exports = { createImportService, detectTypeFromName, MANUAL_FOLDER_DEFAULT };

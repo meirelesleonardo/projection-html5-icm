@@ -25,6 +25,7 @@
   var qrStream = null;
   var videoBgSrc = null;
   var cachedVideos = [];
+  var lastManualImport = null;
   var controlWaiters = [];
   var BG_DEFAULT = 'imagens/fundo.jpg';
   var LOGO_SLIDE_HTML = null;
@@ -58,7 +59,7 @@
       b.classList.toggle('active', on);
       if (on) activeBtn = b;
     });
-    ['live', 'playlist', 'library', 'bible', 'decks', 'media', 'more'].forEach(function (t) {
+    ['live', 'playlist', 'library', 'import', 'bible', 'decks', 'media', 'more'].forEach(function (t) {
       var el = $('tab-' + t);
       if (el) el.classList.toggle('hidden', t !== name);
     });
@@ -960,6 +961,125 @@
       .catch(function () {
         $('libraryBox').innerHTML = '<p class="status bad">Falha ao carregar biblioteca do servidor</p>';
       });
+  }
+
+  function libraryPinHeaders(json) {
+    var h = {};
+    if (json) h['Content-Type'] = 'application/json';
+    var pin = $('pinInput') && $('pinInput').value;
+    if (pin) h['X-Room-Pin'] = pin;
+    return h;
+  }
+
+  function setManualAddListEnabled(on) {
+    var btn = $('btnManualAddList');
+    if (btn) btn.disabled = !on;
+  }
+
+  function importManualLouvor() {
+    var st = $('manualImportStatus');
+    var ta = $('manualLouvorText');
+    var text = ta ? ta.value : '';
+    if (state.role === 'observer') {
+      if (st) setStatus(st, 'Modo observador — não pode importar', 'bad');
+      return;
+    }
+    if (!baseUrl) {
+      if (st) setStatus(st, 'Desconectado do servidor', 'bad');
+      return;
+    }
+    if (!String(text || '').trim()) {
+      if (st) setStatus(st, 'Cole a letra do louvor', 'bad');
+      return;
+    }
+    if (st) setStatus(st, 'Importando…', '');
+    setManualAddListEnabled(false);
+    lastManualImport = null;
+    fetch(baseUrl + '/api/library/import-manual', {
+      method: 'POST',
+      headers: libraryPinHeaders(true),
+      body: JSON.stringify({
+        text: text,
+        version: state.libraryVersion != null ? state.libraryVersion : undefined,
+      }),
+    })
+      .then(function (r) {
+        var ver = r.headers.get('X-Library-Version');
+        return r.text().then(function (raw) {
+          var j = null;
+          try {
+            j = raw ? JSON.parse(raw) : null;
+          } catch (_) {
+            j = { error: raw && raw.indexOf('Cannot POST') >= 0
+              ? 'Servidor desatualizado — reinicie o npm start no PC'
+              : 'Resposta inválida do servidor (HTTP ' + r.status + ')' };
+          }
+          return {
+            ok: r.ok,
+            status: r.status,
+            body: j || {},
+            version: ver != null ? Number(ver) : j && j.version,
+          };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          var msg = (res.body && res.body.error) || 'Falha ao importar';
+          if (res.status === 404) {
+            msg = 'Rota não encontrada — reinicie o servidor no PC (npm start)';
+          } else if (res.status === 409) {
+            msg += ' — ajuste o título ou resolva no desktop.';
+          } else if (res.status === 403) {
+            msg = 'PIN incorreto — confira o PIN na tela Conectar';
+          }
+          if (st) setStatus(st, msg, 'bad');
+          setStatus($('appStatus'), msg, 'bad');
+          return;
+        }
+        if (res.version != null) state.libraryVersion = res.version;
+        lastManualImport = {
+          title: res.body.title,
+          content: res.body.content || '',
+          status: res.body.status,
+          song: {
+            name: res.body.title,
+            title: res.body.title,
+            content: res.body.content || '',
+            folder: res.body.libraryName || 'Avulso Manual',
+          },
+        };
+        setManualAddListEnabled(true);
+        loadLibrary();
+        if (ta) ta.value = '';
+        var okMsg =
+          (res.body.status === 'UNCHANGED' ? 'Já existia: ' : 'Importado: ') +
+          (res.body.title || '');
+        if (st) setStatus(st, okMsg, 'ok');
+        setStatus($('appStatus'), okMsg, 'ok');
+      })
+      .catch(function () {
+        if (st) setStatus(st, 'Falha de rede ao importar', 'bad');
+      });
+  }
+
+  function addLastManualToPlaylist() {
+    if (!lastManualImport) return;
+    var song = lastManualImport.song || {
+      name: lastManualImport.title,
+      title: lastManualImport.title,
+      content: lastManualImport.content || '',
+    };
+    var html = songToHtml(song);
+    state.playlist.push({
+      type: 'song',
+      title: lastManualImport.title,
+      song: song,
+      html: html,
+    });
+    syncPlaylist();
+    renderPlaylist();
+    setStatus($('appStatus'), 'Adicionado à lista: ' + lastManualImport.title, 'ok');
+    schedulePersist();
   }
 
   function updateBgStatus() {
@@ -2014,6 +2134,16 @@
   $('libSearch').addEventListener('input', function () {
     renderLibrary($('libSearch').value);
   });
+  if ($('btnManualImport')) {
+    $('btnManualImport').addEventListener('click', function () {
+      importManualLouvor();
+    });
+  }
+  if ($('btnManualAddList')) {
+    $('btnManualAddList').addEventListener('click', function () {
+      addLastManualToPlaylist();
+    });
+  }
   if ($('mediaSearch')) {
     $('mediaSearch').addEventListener('input', function () {
       renderVideoList($('mediaSearch').value);

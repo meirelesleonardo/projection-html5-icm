@@ -441,6 +441,47 @@ app.post('/api/imports/:id/reject', (req, res) => {
   }
 });
 
+app.post('/api/library/import-manual', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const text = req.body && req.body.text;
+    if (text == null || !String(text).trim()) {
+      return res.status(400).json({ error: 'text required', code: 'EMPTY' });
+    }
+    const result = importService.importManualText({
+      text: String(text),
+      libraryName: (req.body && req.body.libraryName) || undefined,
+      lang: (req.body && req.body.lang) || 'pt',
+      expectedVersion: req.body && req.body.version,
+    });
+    setLibraryHeaders(res, {
+      version: result.version,
+      updatedAt: result.updatedAt,
+      etag: String(result.version),
+    });
+    return res.status(200).json(result);
+  } catch (e) {
+    const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
+    console.warn(`[library] import-manual failed ip=${ip}: ${e.message}`);
+    return res.status(status).json({
+      error: e.message,
+      code: e.code || 'import_error',
+      version: e.currentVersion,
+      item: e.item
+        ? {
+            status: e.item.status,
+            incomingTitle: e.item.incomingTitle,
+            matchTitle: e.item.matchTitle,
+          }
+        : undefined,
+    });
+  }
+});
+
 app.get('/api/media/list', (req, res) => {
   const videosDir = path.join(mediaDir, 'videos');
   const files = fs

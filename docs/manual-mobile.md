@@ -25,6 +25,13 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 - **Ao vivo:** anterior / próximo, tap no slide; **Logo / padrão** interrompe qualquer fluxo (vídeo, louvor, stream) e mostra a tela Maranata. Com vídeo projetado, aparecem pause / ±10s / contain / cover / tela cheia / **Som** / **Mudo**.
 - **Lista:** itens do culto; toque para **transmitir**. Use **↑ / ↓** para reordenar e **Remover** para tirar da lista. Esta lista é **compartilhada** com o painel desktop (`index.html`): o que um adiciona ou remove aparece no outro (via servidor). Itens de vídeo/deck feitos no celular também aparecem no desktop (só leitura na árvore; podem ser removidos da fila).
 - **Louvores:** busca na biblioteca oficial do servidor (`GET /api/library`); toque **só adiciona à lista** (não transmite). Edição de louvores no mobile fica para etapa futura — use o painel desktop + **Salvar no servidor**.
+- **Importar:** cola a letra e grava na pasta **Avulso Manual** do servidor.
+  - 1ª linha = título (`N - Nome`, `iN - Nome`, ou só o nome → o servidor atribui `iN`).
+  - Linha em branco = nova tela (estrofe).
+  - `CORO` / `coro` na linha + letra **sem** pular linha = coro; as estrofes seguintes saem intercaladas com o coro (marcador amarelo).
+  - Comandos (linha isolada): `repetir o louvor`, `repetir primeira estrofe`, `repetir o coro`.
+  - Marcadores (sem duplicar letra): `FINAL`, `BIS` / `(BIS)`, `(2X)`, `INSTRUMENTOS`, `VARÕES` / `SERVAS`.
+  - Após importar, use **Adicionar à lista** ou busque em Louvores; projete pela Lista.
 - **Bíblia:** escolha versão (ACF/NVI), livro, capítulo e versículos; **Adicionar à lista**. Projete pela Lista.
 - **Slides:** envie `.pptx` ou `.pdf`; o PC converte (LibreOffice + pdftoppm) em imagens. **Adicionar à lista** ou **Projetar**; navegue no Ao vivo com anterior/próximo.
 - **Mídia:**

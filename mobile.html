@@ -38,6 +38,7 @@
       <button type="button" data-tab="live" class="active">Ao vivo</button>
       <button type="button" data-tab="playlist">Lista</button>
       <button type="button" data-tab="library">Louvores</button>
+      <button type="button" data-tab="import">Importar</button>
       <button type="button" data-tab="bible">Bíblia</button>
       <button type="button" data-tab="decks">Slides</button>
       <button type="button" data-tab="media">Mídia</button>
@@ -81,6 +82,30 @@
       <p class="status" id="libHint">Toque para adicionar à lista (não transmite).</p>
       <input id="libSearch" placeholder="Buscar louvor…">
       <div class="card" id="libraryBox" style="max-height:60vh;overflow:auto;padding:0"></div>
+    </div>
+
+    <div id="tab-import" class="tab-panel hidden">
+      <div class="card">
+        <h2>Importar louvor</h2>
+        <p class="status" id="importHint">
+          Pasta: <strong>Avulso Manual</strong>. 1ª linha = título
+          (<code>N - Nome</code> ou só o nome → vira <code>iN - …</code>).
+          Linha em branco = nova tela. <code>CORO</code> + letra na linha seguinte = coro intercalado.
+          Comandos: <code>repetir o louvor</code>, <code>repetir primeira estrofe</code>,
+          <code>repetir o coro</code>. Também: FINAL, BIS, (2X), INSTRUMENTOS.
+        </p>
+        <label for="manualLouvorText">Letra</label>
+        <textarea
+          id="manualLouvorText"
+          rows="14"
+          placeholder="150 - NOME DO LOUVOR&#10;Primeira estrofe&#10;linha 2&#10;&#10;CORO&#10;Linha do coro&#10;&#10;Segunda estrofe"
+        ></textarea>
+        <button type="button" id="btnManualImport">Importar para biblioteca</button>
+        <button type="button" class="secondary" id="btnManualAddList" disabled>
+          Adicionar à lista
+        </button>
+        <p class="status" id="manualImportStatus"></p>
+      </div>
     </div>
 
     <div id="tab-bible" class="tab-panel hidden">

@@ -7,18 +7,24 @@ const { paginatePlainText } = require('../paginate');
 const { parseTitleNumber } = require('../ir');
 
 /**
- * Extract CanonicalSong(s) from a TXT file.
+ * Extract CanonicalSong(s) from TXT string content.
  * Heuristic: optional first line as title if looks like "N - TITLE" or ALL CAPS short line;
  * rest is body. Multiple songs separated by form-feed or line of ===.
+ *
+ * @param {string} text
+ * @param {object} [options]
+ * @param {string} [options.collection]
+ * @param {string} [options.fileName] - used when title must be inferred
  */
-function extractTxt(filePath, options = {}) {
-  const text = fs.readFileSync(filePath, 'utf8');
+function extractTxtContent(text, options = {}) {
   const collection = options.collection || '';
-  const chunks = text.split(/\n={3,}\n|\f/);
+  const fileName = options.fileName || 'paste.txt';
+  const chunks = String(text || '').split(/\n={3,}\n|\f/);
   const songs = [];
   const warnings = [];
 
   for (const chunk of chunks) {
+    const chunkWarnings = [];
     const lines = chunk.replace(/\r\n/g, '\n').split('\n');
     while (lines.length && !lines[0].trim()) lines.shift();
     while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
@@ -32,8 +38,9 @@ function extractTxt(filePath, options = {}) {
       (titleLine === titleLine.toUpperCase() && titleLine.length <= 80 && bodyLines.length);
 
     if (!looksTitle) {
-      titleLine = path.basename(filePath, path.extname(filePath));
+      titleLine = path.basename(fileName, path.extname(fileName));
       bodyLines = lines;
+      chunkWarnings.push('título inferido do nome do arquivo');
       warnings.push('título inferido do nome do arquivo');
     }
 
@@ -48,23 +55,38 @@ function extractTxt(filePath, options = {}) {
         collectionHint: collection,
         source: {
           type: 'txt',
-          file: path.basename(filePath),
+          file: path.basename(fileName),
           collection,
         },
         sections,
         presentation: { mode: 'normalized', slides },
-        needsReview: warnings.length > 0,
-        warnings: warnings.slice(),
+        needsReview: chunkWarnings.length > 0,
+        warnings: chunkWarnings.slice(),
       })
     );
   }
 
   return {
     type: 'txt',
-    file: filePath,
+    file: fileName,
     songs,
     warnings,
   };
 }
 
-module.exports = { extractTxt };
+/**
+ * Extract CanonicalSong(s) from a TXT file.
+ */
+function extractTxt(filePath, options = {}) {
+  const text = fs.readFileSync(filePath, 'utf8');
+  const result = extractTxtContent(text, {
+    ...options,
+    fileName: path.basename(filePath),
+  });
+  return {
+    ...result,
+    file: filePath,
+  };
+}
+
+module.exports = { extractTxt, extractTxtContent };
