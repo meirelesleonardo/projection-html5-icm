@@ -99,6 +99,32 @@
   object-fit: contain;
 }
 
+/* Projection video fullscreen — outside Reveal (transforms break position:fixed) */
+#projVideoFsLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 8500;
+  background: #000;
+  display: none;
+}
+#projVideoFsLayer.active {
+  display: block;
+}
+#projVideoFsLayer video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  object-fit: cover;
+  background: #000;
+}
+#projVideoFsLayer[data-video-fit="contain"] video {
+  object-fit: contain;
+}
+
 .reveal.cleared .slides {
   visibility: hidden;
 }
@@ -116,26 +142,8 @@
   object-fit: contain;
   background: #000;
 }
-.reveal .slides section.video-slide.video-fullscreen {
-  width: 100% !important;
-  height: 100% !important;
-}
 .reveal .slides section.video-slide.video-fullscreen .video-title {
   display: none !important;
-}
-.reveal .slides section.video-slide.video-fullscreen .proj-video,
-.reveal .slides section.video-slide.video-fullscreen video {
-  position: absolute;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-  max-width: none !important;
-  max-height: none !important;
-  object-fit: cover;
-}
-.reveal[data-video-fit="contain"] .slides section.video-slide.video-fullscreen .proj-video,
-.reveal[data-video-fit="contain"] .slides section.video-slide.video-fullscreen video {
-  object-fit: contain;
 }
 .reveal[data-video-fit="cover"] .slides section.video-slide .proj-video,
 .reveal[data-video-fit="cover"] .slides section.video-slide video {

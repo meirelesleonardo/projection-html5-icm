@@ -21,6 +21,7 @@
   <div id="remoteVideoLayer">
     <video id="remoteVideo" autoplay playsinline></video>
   </div>
+  <div id="projVideoFsLayer" aria-hidden="true"></div>
   <div id="connDot" class="off" title="WebSocket"></div>
   <button type="button" id="fsPrompt" class="fs-prompt" hidden>
     Toque aqui para tela cheia (ou pressione F11)
@@ -129,10 +130,45 @@
         }
       }
 
+      function getFsLayer() {
+        return document.getElementById('projVideoFsLayer');
+      }
+
+      function getProjVideo() {
+        return (
+          document.querySelector('#projVideoFsLayer video') ||
+          document.querySelector('.reveal .slides video') ||
+          document.querySelector('.reveal .slides .proj-video')
+        );
+      }
+
+      function releaseFsVideo() {
+        var layer = getFsLayer();
+        if (!layer) return;
+        var v = layer.querySelector('video');
+        if (v && v._fsReturnParent) {
+          if (v._fsReturnNext && v._fsReturnNext.parentNode === v._fsReturnParent) {
+            v._fsReturnParent.insertBefore(v, v._fsReturnNext);
+          } else {
+            v._fsReturnParent.appendChild(v);
+          }
+          v._fsReturnParent = null;
+          v._fsReturnNext = null;
+        } else if (v) {
+          // Orphan from a previous reload — discard
+          try {
+            v.pause();
+          } catch (e) {}
+          layer.innerHTML = '';
+        }
+        layer.classList.remove('active');
+        layer.removeAttribute('data-video-fit');
+      }
+
       function playSlideVideo(optSrc, currentTime) {
         setPairingVisible(false);
         $('.reveal').removeClass('cleared');
-        var v = document.querySelector('.reveal .slides video');
+        var v = getProjVideo();
         var url = optSrc ? resolveMediaUrl(optSrc) : null;
         var changedSrc = false;
         if (url) {
@@ -148,7 +184,7 @@
             0,
             true
           );
-          v = document.querySelector('.reveal .slides video');
+          v = getProjVideo();
           changedSrc = true;
         } else if (url && v && !sameMediaUrl(v.getAttribute('src') || v.src, url)) {
           v.setAttribute('src', url);
@@ -157,6 +193,7 @@
         }
         if (!v) return;
         applyVideoStyles();
+        v = getProjVideo() || v;
         v.removeAttribute('data-autoplay');
         v.setAttribute('playsinline', '');
         v.setAttribute('webkit-playsinline', '');
@@ -199,15 +236,15 @@
 
       function applyVideoMuted(muted) {
         videoMuted = !!muted;
-        document.querySelectorAll('.reveal .slides video').forEach(function (v) {
-          v.muted = videoMuted;
-          if (!videoMuted) {
-            var p = v.play();
-            if (p && typeof p.catch === 'function') {
-              p.catch(function () {});
-            }
+        var v = getProjVideo();
+        if (!v) return;
+        v.muted = videoMuted;
+        if (!videoMuted) {
+          var p = v.play();
+          if (p && typeof p.catch === 'function') {
+            p.catch(function () {});
           }
-        });
+        }
       }
 
       function applyVideoStyles() {
@@ -216,33 +253,79 @@
           root.setAttribute('data-video-fit', videoFit);
           root.classList.toggle('video-fs-active', !!videoFullscreen);
         }
-        document.querySelectorAll('.slides video, .slides .proj-video').forEach(function (v) {
-          v.setAttribute('playsinline', '');
-          v.setAttribute('webkit-playsinline', '');
-          v.style.objectFit = videoFit || 'contain';
-          var section = v.closest('section');
-          if (section) {
-            section.classList.toggle('video-fullscreen', !!videoFullscreen);
-            section.classList.add('video-slide');
+        var layer = getFsLayer();
+        var v = getProjVideo();
+        if (!v) {
+          if (layer) {
+            layer.classList.remove('active');
+            layer.removeAttribute('data-video-fit');
           }
-          if (videoFullscreen) {
-            v.style.maxWidth = 'none';
-            v.style.maxHeight = 'none';
-            v.style.width = '100%';
-            v.style.height = '100%';
-          } else {
-            v.style.maxWidth = '100%';
-            v.style.maxHeight = '85vh';
-            v.style.width = 'auto';
-            v.style.height = 'auto';
-            v.style.display = 'block';
-            v.style.margin = '0 auto';
+          return;
+        }
+
+        v.setAttribute('playsinline', '');
+        v.setAttribute('webkit-playsinline', '');
+        v.style.objectFit = videoFit || 'contain';
+
+        var section = v.closest('section') || v._fsReturnParent;
+        if (section && section.tagName === 'SECTION') {
+          section.classList.toggle('video-fullscreen', !!videoFullscreen);
+          section.classList.add('video-slide');
+        }
+
+        if (videoFullscreen) {
+          v.removeAttribute('controls');
+          // Clear slide-layout inline styles; layer CSS owns sizing
+          v.style.position = '';
+          v.style.inset = '';
+          v.style.top = '';
+          v.style.left = '';
+          v.style.right = '';
+          v.style.bottom = '';
+          v.style.zIndex = '';
+          v.style.maxWidth = '';
+          v.style.maxHeight = '';
+          v.style.width = '';
+          v.style.height = '';
+          v.style.margin = '';
+          v.style.display = '';
+          if (layer && v.parentElement !== layer) {
+            v._fsReturnParent = v.parentElement;
+            v._fsReturnNext = v.nextSibling;
+            layer.appendChild(v);
           }
-        });
+          if (layer) {
+            layer.classList.add('active');
+            layer.setAttribute('data-video-fit', videoFit || 'contain');
+          }
+        } else {
+          if (!v.hasAttribute('controls')) v.setAttribute('controls', '');
+          if (layer && v.parentElement === layer) {
+            releaseFsVideo();
+            v = getProjVideo() || v;
+          } else if (layer) {
+            layer.classList.remove('active');
+            layer.removeAttribute('data-video-fit');
+          }
+          v.style.position = '';
+          v.style.inset = '';
+          v.style.top = '';
+          v.style.left = '';
+          v.style.right = '';
+          v.style.bottom = '';
+          v.style.zIndex = '';
+          v.style.maxWidth = '100%';
+          v.style.maxHeight = '85vh';
+          v.style.width = 'auto';
+          v.style.height = 'auto';
+          v.style.display = 'block';
+          v.style.margin = '0 auto';
+        }
       }
 
       function reloadReveal(htmlslides, slideIndex, skipAutoplay) {
         hideStream();
+        releaseFsVideo();
         $('.reveal').removeClass('cleared');
         setPairingVisible(false);
         $('.slides').html(htmlslides || '');
@@ -254,7 +337,7 @@
         }
         changeSlide(slideIndex != null ? slideIndex : 0);
         applyVideoStyles();
-        if (!skipAutoplay && document.querySelector('.reveal .slides video')) {
+        if (!skipAutoplay && getProjVideo()) {
           setTimeout(function () {
             playSlideVideo(null, null);
           }, 150);
@@ -402,11 +485,11 @@
           applyVideoMuted(muted);
         }
         if (fn === 'pauseVideo') {
-          var pv = document.querySelector('.slides video');
+          var pv = getProjVideo();
           if (pv) pv.pause();
         }
         if (fn === 'seekVideo') {
-          var sv = document.querySelector('.slides video');
+          var sv = getProjVideo();
           if (sv) {
             if (data.data && data.data.delta != null) {
               try {
