@@ -10,3 +10,4 @@ server/certs/*.pem
 .DS_Store
 *.log
 .env
+*.pptx

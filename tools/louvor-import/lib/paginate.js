@@ -143,5 +143,6 @@ function paginatePlainText(text, options = {}) {
 module.exports = {
   paginateLines,
   paginatePlainText,
+  wrapSlideLines,
   DEFAULTS,
 };

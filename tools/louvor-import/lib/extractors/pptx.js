@@ -6,6 +6,13 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 const { createCanonicalSong, createSlide } = require('../ir');
 const { annotatePlainLines } = require('../markers');
+const {
+  buildSlideLayout,
+  annotateMixed,
+  wrapStructuredLines,
+  splitDenseLines,
+  visualLineCount,
+} = require('../pptx-layout');
 
 const TITLE_FOOTER_RE = /^(\d{1,4})\s*[-–—]\s*(.+)$/;
 
@@ -149,6 +156,28 @@ function slideHasIndexMarker(lines) {
 }
 
 /**
+ * Drop Índice and the numbered title from layout tokens. Chave objects stay.
+ * dropTitleText removes the unnumbered title once (same string the segmenter dropped).
+ */
+function filterLayoutTokens(tokens, titleNumber, dropTitleText) {
+  if (!tokens) return null;
+  let removedTitle = false;
+  return tokens.filter((item) => {
+    if (typeof item !== 'string') return true;
+    if (isNavOnly(item)) return false;
+    if (titleNumber != null) {
+      const m = item.match(TITLE_FOOTER_RE);
+      if (m && Number(m[1]) === titleNumber) return false;
+    }
+    if (dropTitleText && !removedTitle && item === dropTitleText) {
+      removedTitle = true;
+      return false;
+    }
+    return true;
+  });
+}
+
+/**
  * Segment slides using "Índice" as end-of-song marker (avulsos / unnumbered decks).
  */
 function segmentSongsByIndexMarker(slideRecords) {
@@ -174,10 +203,15 @@ function segmentSongsByIndexMarker(slideRecords) {
           return true;
         });
       }
+      const laid = filterLayoutTokens(
+        rec.layoutTokens,
+        null,
+        slideIdx === 0 && title.index >= 0 ? (rec.lines || [])[title.index] : null
+      );
       return {
-        lines,
+        lines: laid || lines,
         sourceSlideIndex: rec.index,
-        warnings: rec.warnings || [],
+        warnings: [...(rec.warnings || []), ...(rec.layoutWarnings || [])],
       };
     });
 
@@ -249,19 +283,23 @@ function segmentSongs(slideRecords) {
         current.number !== title.number ||
         normalizeTitle(current.titleRaw) !== normalizeTitle(title.titleRaw);
 
+      const laid = filterLayoutTokens(rec.layoutTokens, title.number, null);
       const slide = {
-        lines: lyricLines.length ? lyricLines : bodyLines.filter((l) => !TITLE_FOOTER_RE.test(l)),
+        lines:
+          laid ||
+          (lyricLines.length ? lyricLines : bodyLines.filter((l) => !TITLE_FOOTER_RE.test(l))),
         sourceSlideIndex: rec.index,
-        warnings: rec.warnings || [],
+        warnings: [...(rec.warnings || []), ...(rec.layoutWarnings || [])],
       };
 
       if (isNew) startSong(title, slide);
       else current.slides.push(slide);
     } else if (current) {
+      const laid = filterLayoutTokens(rec.layoutTokens, null, null);
       current.slides.push({
-        lines: bodyLines,
+        lines: laid || bodyLines,
         sourceSlideIndex: rec.index,
-        warnings: rec.warnings || [],
+        warnings: [...(rec.warnings || []), ...(rec.layoutWarnings || [])],
       });
     }
   }
@@ -278,6 +316,15 @@ function segmentSongsAuto(slideRecords) {
     if (numbered.length) return numbered;
   }
   return segmentSongsByIndexMarker(slideRecords);
+}
+
+function presentSlideLines(lines) {
+  const useLayout = (lines || []).some((l) => l && typeof l === 'object');
+  const ann = useLayout ? annotateMixed(lines) : annotatePlainLines(lines);
+  return {
+    pieces: splitDenseLines(wrapStructuredLines(ann.slideLines)),
+    sections: ann.sections,
+  };
 }
 
 /**
@@ -306,13 +353,30 @@ function extractPptx(filePath, options = {}) {
       const xml = fs.readFileSync(file, 'utf8');
       const lines = extractTextFromSlideXml(xml);
       const warnings = [];
+      let layoutTokens = null;
+      let layoutWarnings = [];
+      if (/Brace/.test(xml)) {
+        const laid = buildSlideLayout(xml);
+        if (laid.hasBrace) {
+          layoutTokens = laid.tokens;
+          layoutWarnings = laid.warnings || [];
+        }
+      }
       if (/p:timing|p:anim/i.test(xml)) warnings.push('animações detectadas (ignoradas)');
       const skip =
         isIndexSlide(lines, idx) ||
         isClosingArt(lines, idx, total) ||
         lines.length === 0;
 
-      const rec = { index: idx, entry: file, lines, warnings, skip };
+      const rec = {
+        index: idx,
+        entry: file,
+        lines,
+        layoutTokens,
+        layoutWarnings,
+        warnings,
+        skip,
+      };
       slideRecords.push(rec);
       rawSlides.push({ index: idx, lines, skip, warnings });
     }
@@ -323,24 +387,29 @@ function extractPptx(filePath, options = {}) {
     }
 
     const songs = segmented.map((seg) => {
-      const slideObjs = seg.slides.map((s) => {
-        const { slideLines, sections } = annotatePlainLines(s.lines);
-        return {
-          slide: createSlide(slideLines, {
-            sourceSlideIndex: s.sourceSlideIndex,
-            warnings: s.warnings,
-          }),
-          sections,
-        };
-      });
+      const slideObjs = [];
+      for (const s of seg.slides) {
+        const presented = presentSlideLines(s.lines);
+        presented.pieces.forEach((lines, i) => {
+          slideObjs.push({
+            slide: createSlide(lines, {
+              sourceSlideIndex: s.sourceSlideIndex,
+              warnings: i === 0 ? s.warnings || [] : [],
+            }),
+            sections: i === 0 ? presented.sections : [],
+          });
+        });
+      }
 
       const sections = [];
       for (const x of slideObjs) sections.push(...x.sections);
       const slides = slideObjs.map((x) => x.slide);
 
       const densityWarnings = [];
+      let layoutReview = false;
       for (const sl of slides) {
-        if ((sl.lines || []).length > 9) densityWarnings.push('slide denso (>9 linhas)');
+        if (visualLineCount(sl.lines) > 9) densityWarnings.push('slide denso (>9 linhas)');
+        if ((sl.warnings || []).some((w) => /revisar/.test(w))) layoutReview = true;
       }
       const warnings = densityWarnings.slice();
       if (seg.needsReview) warnings.push('título sem número — revisar');
@@ -363,7 +432,7 @@ function extractPptx(filePath, options = {}) {
             slideIndexes: slides.map((s) => s.sourceSlideIndex),
           },
         },
-        needsReview: densityWarnings.length > 0 || Boolean(seg.needsReview),
+        needsReview: densityWarnings.length > 0 || layoutReview || Boolean(seg.needsReview),
         warnings,
       });
     });
@@ -392,4 +461,6 @@ module.exports = {
   segmentSongsAuto,
   detectTitleLine,
   detectUnnumberedTitle,
+  presentSlideLines,
+  filterLayoutTokens,
 };
