@@ -6,10 +6,11 @@
  * - blank lines → slides (\n\n)
  * - CORO + lyrics (no blank between) → yellow CORO + interleave after each verse
  * - "repetir o louvor" / "repetir primeira estrofe" / "repetir o coro" → expand content
- * - BIS / FINAL / INSTRUMENTOS / (Nx) → yellow labels (no lyric duplication)
+ * - BIS / FINAL / INSTRUMENTOS / (Nx) / Cantar Nx → yellow labels (no lyric duplication)
+ * - (V) (S) (H) (M) (varões) (servas) (HOMENS) (MULHERES) → yellow voice tags
  */
 
-const { formatYellowLabel, classifyLabel } = require('./markers');
+const { formatYellowLabel, classifyLabel, extractTrailingCue } = require('./markers');
 const { parseTitleNumber } = require('./ir');
 
 const IMPORT_TITLE_RE = /^i(\d+)\s*[-–—]\s*(.+)$/i;
@@ -100,8 +101,40 @@ function makeMarkerSlide(lines) {
         out.push(formatYellowLabel(`(${classified.repeat.n}X)`));
       }
     } else {
-      out.push(line);
+      const trail = extractTrailingCue(line);
+      if (trail) {
+        if (trail.text) out.push(trail.text);
+        out.push(formatYellowLabel(trail.display));
+      } else {
+        out.push(line);
+      }
     }
+  }
+  return out.join('\n');
+}
+
+function renderCueLines(lines) {
+  const out = [];
+  for (const line of lines) {
+    const classified = classifyLabel(line);
+    if (classified && classified.kind === 'repeat' && classified.repeat) {
+      if (classified.repeat.kind === 'bis') out.push(formatYellowLabel('(BIS)'));
+      else if (classified.repeat.kind === 'nx') {
+        out.push(formatYellowLabel(`(${classified.repeat.n}X)`));
+      }
+      continue;
+    }
+    if (classified && classified.kind === 'section' && classified.type === 'part_cue') {
+      out.push(formatYellowLabel(line.trim().toUpperCase()));
+      continue;
+    }
+    const trail = extractTrailingCue(line);
+    if (trail) {
+      if (trail.text) out.push(trail.text);
+      out.push(formatYellowLabel(trail.display));
+      continue;
+    }
+    out.push(line);
   }
   return out.join('\n');
 }
@@ -216,7 +249,7 @@ function normalizeManualPaste(rawText) {
     }
 
     // Verse
-    const verseSlide = lines.join('\n');
+    const verseSlide = renderCueLines(lines);
     verses.push(verseSlide);
     slides.push(verseSlide);
     if (chorusSlide) {

@@ -134,6 +134,38 @@ button:disabled { opacity: 0.45; }
   overscroll-behavior-y: contain;
 }
 
+button.list-item {
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid #2a3548;
+  margin-top: 0;
+  font-weight: 500;
+  min-height: 0;
+}
+button.list-item strong { font-weight: 650; }
+.louvando-num {
+  display: inline-block;
+  min-width: 2.4rem;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.louvando-slide {
+  background: #0c1018;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  margin: 0.4rem 0;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+}
+.louvando-slide small {
+  display: block;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
 .bible-preview {
   max-height: 28vh;
   overflow: auto;

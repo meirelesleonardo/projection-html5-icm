@@ -86,6 +86,26 @@
 
     <div id="tab-import" class="tab-panel hidden">
       <div class="card">
+        <h2>Fonte externa</h2>
+        <p class="status" id="louvandoHint">
+          Busca no Louvando. A pasta leva o nome da coleção, com
+          <strong>Louvando</strong> na frente (CIA no lugar de Crianças, Intermediários e Adolescentes).
+        </p>
+        <label for="louvandoQuery">Buscar um louvor</label>
+        <input id="louvandoQuery" placeholder="Nome ou número" autocomplete="off" enterkeyhint="search">
+        <button type="button" id="btnLouvandoSearch">Buscar</button>
+        <p class="status" id="louvandoSearchStatus"></p>
+        <div id="louvandoResults"></div>
+        <button type="button" class="secondary hidden" id="btnLouvandoMore">Carregar mais</button>
+        <div id="louvandoPreview" class="hidden">
+          <p class="status" id="louvandoPreviewMeta"></p>
+          <div id="louvandoSlides"></div>
+          <button type="button" id="btnLouvandoImport">Importar para biblioteca</button>
+          <button type="button" class="secondary" id="btnLouvandoAddList" disabled>Adicionar à lista</button>
+          <p class="status" id="louvandoImportStatus"></p>
+        </div>
+      </div>
+      <div class="card">
         <h2>Importar louvor</h2>
         <p class="status" id="importHint">
           Pasta: <strong>Avulso Manual</strong>. 1ª linha = título

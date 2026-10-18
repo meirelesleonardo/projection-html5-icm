@@ -477,7 +477,21 @@ function createImportService(deps) {
   function importManualText(opts = {}) {
     const libraryName = String(opts.libraryName || MANUAL_FOLDER_DEFAULT).trim() || MANUAL_FOLDER_DEFAULT;
     const lang = String(opts.lang || 'pt').trim() || 'pt';
-    const normalized = normalizeManualPaste(opts.text);
+    const assignImportNumber = opts.assignImportNumber !== false;
+    let normalized;
+    if (opts.formatted) {
+      const title = String(opts.title || '').trim();
+      const content = String(opts.content || '').trim();
+      if (!title || !content) {
+        const err = new Error('título e letra são obrigatórios');
+        err.status = 400;
+        err.code = 'EMPTY';
+        throw err;
+      }
+      normalized = { title, content, warnings: opts.warnings || [] };
+    } else {
+      normalized = normalizeManualPaste(opts.text);
+    }
     const song = { title: normalized.title, content: normalized.content };
     const v = validateOfficialSong(song);
     if (!v.ok) {
@@ -523,6 +537,7 @@ function createImportService(deps) {
       decisions: {},
       selection: { 'manual-0': true },
       allocImportNumber,
+      assignImportNumber,
     });
 
     const item = plan.items[0];
@@ -591,6 +606,29 @@ function createImportService(deps) {
     };
   }
 
+  /**
+   * Save an already formatted song (Louvando). Does not assign iN.
+   */
+  function importFormattedSong(opts = {}) {
+    const libraryName = String(opts.libraryName || '').trim();
+    if (!libraryName) {
+      const err = new Error('pasta de destino obrigatória');
+      err.status = 400;
+      err.code = 'EMPTY';
+      throw err;
+    }
+    return importManualText({
+      formatted: true,
+      title: opts.title,
+      content: opts.content,
+      libraryName,
+      lang: opts.lang || 'pt',
+      expectedVersion: opts.expectedVersion,
+      assignImportNumber: false,
+      warnings: opts.warnings,
+    });
+  }
+
   return {
     startFromUpload,
     processExtraction,
@@ -602,6 +640,7 @@ function createImportService(deps) {
     listJobs: () => importRepo.listJobs(),
     restoreBackup,
     importManualText,
+    importFormattedSong,
     detectTypeFromName,
     suggestLibraryNameFromFile,
     parseSongIdentity,

@@ -90,6 +90,24 @@ describe('importManualText', () => {
     assert.match(slides[3], /CORO/);
   });
 
+  it('saves a Louvando song without an iN prefix', () => {
+    const loaded = libraryStore.load();
+    const res = importService.importFormattedSong({
+      title: 'CONHEÇAMOS E PROSSIGAMOS (E)',
+      content: 'estrofe um\n\nestrofe dois',
+      libraryName: 'Louvando CIA',
+      expectedVersion: loaded.version,
+    });
+    assert.equal(res.title, 'CONHEÇAMOS E PROSSIGAMOS (E)');
+    assert.equal(res.libraryName, 'Louvando CIA');
+    assert.equal(res.status, 'NEW');
+    const after = libraryStore.load();
+    const folder = after.library.find((f) => f.name === 'Louvando CIA');
+    assert.ok(folder);
+    assert.equal(folder.songs[0].title, 'CONHEÇAMOS E PROSSIGAMOS (E)');
+    assert.equal(folder.songs[0].content, 'estrofe um\n\nestrofe dois');
+  });
+
   it('conflicts when same name different content', () => {
     const loaded = libraryStore.load();
     // First insert with plain name that becomes iN — use numeric to control identity

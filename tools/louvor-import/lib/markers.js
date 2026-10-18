@@ -18,11 +18,16 @@ const LABEL_MAP = [
   { re: /^INSTRUMENTOS:?$/i, type: 'instruments', conf: 1 },
   { re: /^VAR[OÕ]ES:?$/i, type: 'part_cue', conf: 1 },
   { re: /^SERVAS:?$/i, type: 'part_cue', conf: 1 },
+  { re: /^\(VAR[OÕ]ES\)$/i, type: 'part_cue', conf: 1 },
+  { re: /^\(SERVAS\)$/i, type: 'part_cue', conf: 1 },
+  { re: /^\(HOMENS\)$/i, type: 'part_cue', conf: 1 },
+  { re: /^\(MULHERES\)$/i, type: 'part_cue', conf: 1 },
+  { re: /^\([VSHM]\)$/i, type: 'part_cue', conf: 1 },
   { re: /^\(BIS\)$/i, type: 'repeat_bis', conf: 1 },
   { re: /^BIS$/i, type: 'repeat_bis', conf: 0.92 },
+  { re: /^CANTAR\s+(\d+)\s*X$/i, type: 'repeat_nx', conf: 1 },
   { re: /^\((\d+)\s*X\)$/i, type: 'repeat_nx', conf: 1 },
   { re: /^(\d+)\s*X$/i, type: 'repeat_nx', conf: 0.9 },
-  { re: /^\([MH]\)$/i, type: 'part_cue', conf: 0.95 },
 ];
 
 function normalizeLabelText(s) {
@@ -81,6 +86,42 @@ function extractInlineRepeat(line) {
       repeat: { kind: 'nx', n: Number(m[2]) },
       confidence: 0.96,
     };
+  }
+  return null;
+}
+
+/**
+ * Cue at the end of a lyric line: "… Cantar 2x" or "… (V)".
+ * The lyric before the cue must be non-empty; a line that is only the cue
+ * is handled by classifyLabel.
+ * @returns {{ text: string, display: string, kind: 'repeat'|'section', repeat?: object } | null}
+ */
+function extractTrailingCue(line) {
+  const s = String(line || '').trim();
+  let m = s.match(/^(.*\S)\s+cantar\s+(\d+)\s*x\s*$/i);
+  if (m) {
+    const n = Number(m[2]);
+    return {
+      text: m[1].trim(),
+      display: `(${n}X)`,
+      kind: 'repeat',
+      repeat: { kind: 'nx', n },
+    };
+  }
+  m = s.match(
+    /^(.*\S)\s*(\((?:v|s|h|m|var[oõ]es|servas|homens|mulheres)\))\s*$/i
+  );
+  if (!m) m = s.match(/^(.*\S)\s+(var[oõ]es|servas)\s*$/i);
+  if (m) {
+    const token = m[2];
+    const classified = classifyLabel(token);
+    if (classified && classified.kind === 'section' && classified.type === 'part_cue') {
+      return {
+        text: m[1].trim(),
+        display: normalizeLabelText(token),
+        kind: 'section',
+      };
+    }
   }
   return null;
 }
@@ -284,6 +325,24 @@ function annotatePlainLines(lines) {
       continue;
     }
 
+    const trail = extractTrailingCue(line);
+    if (trail && trail.kind === 'repeat') {
+      out.push(trail.text);
+      out.push({ marker: 'repeat', repeat: trail.repeat });
+      current.lines.push(trail.text);
+      if (!current.repeat) current.repeat = trail.repeat;
+      continue;
+    }
+    if (trail && trail.kind === 'section') {
+      out.push(trail.text);
+      current.lines.push(trail.text);
+      pushCurrent();
+      current.type = 'part_cue';
+      current.confidence = 1;
+      out.push({ marker: 'section', type: 'part_cue', text: trail.display });
+      continue;
+    }
+
     // Whole-line BIS without parens only if exact
     if (/^bis$/i.test(line)) {
       out.push({ marker: 'repeat', repeat: { kind: 'bis' } });
@@ -300,6 +359,7 @@ function annotatePlainLines(lines) {
 module.exports = {
   classifyLabel,
   extractInlineRepeat,
+  extractTrailingCue,
   chaveClassToRepeat,
   contentToSlides,
   slidesToContent,

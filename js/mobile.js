@@ -26,6 +26,11 @@
   var videoBgSrc = null;
   var cachedVideos = [];
   var lastManualImport = null;
+  var lastLouvandoImport = null;
+  var louvandoPage = 1;
+  var louvandoQuery = '';
+  var louvandoLastPage = 0;
+  var louvandoSelectedId = null;
   var controlWaiters = [];
   var BG_DEFAULT = 'imagens/fundo.jpg';
   var LOGO_SLIDE_HTML = null;
@@ -1079,6 +1084,271 @@
     syncPlaylist();
     renderPlaylist();
     setStatus($('appStatus'), 'Adicionado à lista: ' + lastManualImport.title, 'ok');
+    schedulePersist();
+  }
+
+  function setLouvandoAddEnabled(on) {
+    var btn = $('btnLouvandoAddList');
+    if (btn) btn.disabled = !on;
+  }
+
+  function louvandoSlideText(slide) {
+    return String(slide || '')
+      .replace(/<font[^>]*>\s*<i>\s*([^<]+?)\s*<\/i>\s*<\/font>/gi, '$1')
+      .replace(/<[^>]+>/g, '');
+  }
+
+  function showLouvandoMore(on) {
+    var btn = $('btnLouvandoMore');
+    if (btn) btn.classList.toggle('hidden', !on);
+  }
+
+  function renderLouvandoHits(items, append) {
+    var box = $('louvandoResults');
+    if (!box) return;
+    if (!append) box.innerHTML = '';
+    (items || []).forEach(function (it) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'list-item';
+      btn.setAttribute('data-louvor-id', it.id || '');
+      if (it.id && it.id === louvandoSelectedId) btn.classList.add('active');
+      var num = it.number != null && it.number !== '' ? String(it.number) : '—';
+      var title = it.title || '';
+      var tone = String(it.tone || '').trim();
+      if (tone && tone !== '-' && tone !== '–' && tone !== '—') title += ' (' + tone + ')';
+      var meta = [it.collection || '', it.theme || ''].filter(Boolean).join(' · ');
+      btn.innerHTML =
+        '<span class="louvando-num">' +
+        escapeHtml(num) +
+        '</span> <strong>' +
+        escapeHtml(title) +
+        '</strong><br><small>' +
+        escapeHtml(meta) +
+        '</small>';
+      btn.addEventListener('click', function () {
+        selectLouvandoSong(it.id);
+      });
+      box.appendChild(btn);
+    });
+  }
+
+  function renderLouvandoSelection(id) {
+    var box = $('louvandoResults');
+    if (!box) return;
+    Array.prototype.forEach.call(box.querySelectorAll('button'), function (el) {
+      el.classList.toggle('active', el.getAttribute('data-louvor-id') === id);
+    });
+  }
+
+  function selectLouvandoSong(id) {
+    var st = $('louvandoImportStatus');
+    var preview = $('louvandoPreview');
+    if (!id || !baseUrl) return;
+    louvandoSelectedId = id;
+    renderLouvandoSelection(id);
+    lastLouvandoImport = null;
+    setLouvandoAddEnabled(false);
+    if (preview) preview.classList.remove('hidden');
+    if (st) setStatus(st, 'Carregando letra…', '');
+    fetch(baseUrl + '/api/sources/louvando/songs/' + encodeURIComponent(id), {
+      headers: libraryPinHeaders(false),
+      cache: 'no-store',
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { ok: r.ok, status: r.status, body: j || {} };
+        });
+      })
+      .then(function (res) {
+        if (louvandoSelectedId !== id) return;
+        if (!res.ok) {
+          if (st) setStatus(st, (res.body && res.body.error) || 'Falha ao abrir o louvor', 'bad');
+          return;
+        }
+        showLouvandoPreview(res.body);
+      })
+      .catch(function () {
+        if (louvandoSelectedId === id && st) setStatus(st, 'Falha de rede ao abrir o louvor', 'bad');
+      });
+  }
+
+  function showLouvandoPreview(body) {
+    var preview = $('louvandoPreview');
+    var meta = $('louvandoPreviewMeta');
+    var slidesBox = $('louvandoSlides');
+    var st = $('louvandoImportStatus');
+    if (preview) preview.classList.remove('hidden');
+    if (meta) {
+      meta.textContent =
+        (body.title || '') + (body.libraryName ? ' · pasta ' + body.libraryName : '');
+      meta.className = 'status';
+    }
+    if (slidesBox) {
+      slidesBox.innerHTML = '';
+      (body.slides || []).forEach(function (slide, i) {
+        var div = document.createElement('div');
+        div.className = 'louvando-slide';
+        div.textContent = 'Tela ' + (i + 1) + '\n' + louvandoSlideText(slide);
+        slidesBox.appendChild(div);
+      });
+    }
+    var note =
+      body.warnings && body.warnings.length
+        ? 'A estrofe longa foi dividida para caber no telão.'
+        : '';
+    if (st) setStatus(st, note, '');
+  }
+
+  function searchLouvando(page, append) {
+    var input = $('louvandoQuery');
+    var st = $('louvandoSearchStatus');
+    var q = input ? String(input.value || '').trim() : '';
+    if (!baseUrl) {
+      if (st) setStatus(st, 'Desconectado do servidor', 'bad');
+      return;
+    }
+    if (q.length < 3 && !/^\d+$/.test(q)) {
+      if (st) setStatus(st, 'Digite ao menos 3 letras ou um número', 'bad');
+      return;
+    }
+    if (!append) {
+      louvandoQuery = q;
+      louvandoPage = 1;
+      louvandoSelectedId = null;
+      lastLouvandoImport = null;
+      setLouvandoAddEnabled(false);
+      var preview = $('louvandoPreview');
+      if (preview) preview.classList.add('hidden');
+      page = 1;
+    }
+    if (st) setStatus(st, 'Buscando…', '');
+    var url =
+      baseUrl +
+      '/api/sources/louvando/search?q=' +
+      encodeURIComponent(louvandoQuery || q) +
+      '&page=' +
+      encodeURIComponent(String(page || 1));
+    fetch(url, { headers: libraryPinHeaders(false), cache: 'no-store' })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { ok: r.ok, body: j || {} };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          if (st) setStatus(st, (res.body && res.body.error) || 'Falha na busca', 'bad');
+          return;
+        }
+        var body = res.body;
+        louvandoPage = body.page || page || 1;
+        louvandoLastPage = body.lastPage || 0;
+        renderLouvandoHits(body.items || [], append);
+        showLouvandoMore(louvandoPage < louvandoLastPage);
+        var total = body.total != null ? body.total : (body.items || []).length;
+        if (st) {
+          setStatus(
+            st,
+            total ? total + ' louvores encontrados' : 'Nenhum louvor encontrado',
+            total ? 'ok' : ''
+          );
+        }
+      })
+      .catch(function () {
+        if (st) setStatus(st, 'Falha de rede na busca', 'bad');
+      });
+  }
+
+  function importLouvandoSong() {
+    var st = $('louvandoImportStatus');
+    if (state.role === 'observer') {
+      if (st) setStatus(st, 'Modo observador — não pode importar', 'bad');
+      return;
+    }
+    if (!baseUrl) {
+      if (st) setStatus(st, 'Desconectado do servidor', 'bad');
+      return;
+    }
+    if (!louvandoSelectedId) {
+      if (st) setStatus(st, 'Escolha um louvor na lista', 'bad');
+      return;
+    }
+    if (st) setStatus(st, 'Importando…', '');
+    setLouvandoAddEnabled(false);
+    lastLouvandoImport = null;
+    fetch(baseUrl + '/api/sources/louvando/import', {
+      method: 'POST',
+      headers: libraryPinHeaders(true),
+      body: JSON.stringify({
+        id: louvandoSelectedId,
+        version: state.libraryVersion != null ? state.libraryVersion : undefined,
+      }),
+    })
+      .then(function (r) {
+        var ver = r.headers.get('X-Library-Version');
+        return r.text().then(function (raw) {
+          var j = null;
+          try {
+            j = raw ? JSON.parse(raw) : null;
+          } catch (_) {
+            j = { error: 'Resposta inválida do servidor (HTTP ' + r.status + ')' };
+          }
+          return {
+            ok: r.ok,
+            status: r.status,
+            body: j || {},
+            version: ver != null ? Number(ver) : j && j.version,
+          };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          var msg = (res.body && res.body.error) || 'Falha ao importar';
+          if (res.status === 403) msg = 'PIN incorreto — confira o PIN na tela Conectar';
+          if (st) setStatus(st, msg, 'bad');
+          setStatus($('appStatus'), msg, 'bad');
+          return;
+        }
+        if (res.version != null) state.libraryVersion = res.version;
+        lastLouvandoImport = {
+          title: res.body.title,
+          content: res.body.content || '',
+          song: {
+            name: res.body.title,
+            title: res.body.title,
+            content: res.body.content || '',
+            folder: res.body.libraryName || '',
+          },
+        };
+        setLouvandoAddEnabled(true);
+        loadLibrary();
+        var okMsg =
+          (res.body.status === 'UNCHANGED' ? 'Já existia: ' : 'Importado: ') +
+          (res.body.title || '');
+        if (st) setStatus(st, okMsg, 'ok');
+        setStatus($('appStatus'), okMsg, 'ok');
+      })
+      .catch(function () {
+        if (st) setStatus(st, 'Falha de rede ao importar', 'bad');
+      });
+  }
+
+  function addLastLouvandoToPlaylist() {
+    if (!lastLouvandoImport) return;
+    var song = lastLouvandoImport.song || {
+      name: lastLouvandoImport.title,
+      title: lastLouvandoImport.title,
+      content: lastLouvandoImport.content || '',
+    };
+    state.playlist.push({
+      type: 'song',
+      title: lastLouvandoImport.title,
+      song: song,
+      html: songToHtml(song),
+    });
+    syncPlaylist();
+    renderPlaylist();
+    setStatus($('appStatus'), 'Adicionado à lista: ' + lastLouvandoImport.title, 'ok');
     schedulePersist();
   }
 
@@ -2142,6 +2412,34 @@
   if ($('btnManualAddList')) {
     $('btnManualAddList').addEventListener('click', function () {
       addLastManualToPlaylist();
+    });
+  }
+  if ($('btnLouvandoSearch')) {
+    $('btnLouvandoSearch').addEventListener('click', function () {
+      searchLouvando(1, false);
+    });
+  }
+  if ($('louvandoQuery')) {
+    $('louvandoQuery').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        searchLouvando(1, false);
+      }
+    });
+  }
+  if ($('btnLouvandoMore')) {
+    $('btnLouvandoMore').addEventListener('click', function () {
+      searchLouvando(louvandoPage + 1, true);
+    });
+  }
+  if ($('btnLouvandoImport')) {
+    $('btnLouvandoImport').addEventListener('click', function () {
+      importLouvandoSong();
+    });
+  }
+  if ($('btnLouvandoAddList')) {
+    $('btnLouvandoAddList').addEventListener('click', function () {
+      addLastLouvandoToPlaylist();
     });
   }
   if ($('mediaSearch')) {

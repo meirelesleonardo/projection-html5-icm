@@ -68,6 +68,8 @@ const { createImportRepository } = require('./import/import-repository');
 const { createImportService } = require('./import/import-service');
 const importRepo = createImportRepository({ rootDir: ROOT });
 const importService = createImportService({ importRepo, libraryStore });
+const { createLouvandoClient } = require('./sources/louvando');
+const louvandoClient = createLouvandoClient();
 
 const IMPORT_EXTS = /\.(pptx|ppt|pdf|docx|txt)$/i;
 const importUpload = multer({
@@ -439,6 +441,65 @@ app.post('/api/imports/:id/reject', (req, res) => {
   } catch (e) {
     return res.status(e.status || 500).json({ error: e.message, code: e.code });
   }
+});
+
+function louvandoFail(res, e) {
+  const status = e.status || 502;
+  return res.status(status).json({
+    error: e.message || 'falha ao consultar o Louvando',
+    code: e.code || 'louvando',
+  });
+}
+
+app.get('/api/sources/louvando/search', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  louvandoClient
+    .search(req.query.q, req.query.page)
+    .then((data) => res.json(data))
+    .catch((e) => louvandoFail(res, e));
+});
+
+app.get('/api/sources/louvando/songs/:id', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  louvandoClient
+    .preview(req.params.id)
+    .then((data) => res.json(data))
+    .catch((e) => louvandoFail(res, e));
+});
+
+app.post('/api/sources/louvando/import', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+  const id = req.body && req.body.id;
+  louvandoClient
+    .preview(id)
+    .then((preview) => {
+      const result = importService.importFormattedSong({
+        title: preview.title,
+        content: preview.content,
+        libraryName: preview.libraryName,
+        expectedVersion: req.body && req.body.version,
+        warnings: preview.warnings,
+      });
+      setLibraryHeaders(res, {
+        version: result.version,
+        updatedAt: result.updatedAt,
+        etag: String(result.version),
+      });
+      return res.status(200).json(result);
+    })
+    .catch((e) => {
+      const status = e.status || (e.code === 'CONFLICT' ? 409 : 502);
+      console.warn(`[library] louvando import failed ip=${ip}: ${e.message}`);
+      return res.status(status).json({
+        error: e.message,
+        code: e.code || 'import_error',
+        version: e.currentVersion,
+      });
+    });
 });
 
 app.post('/api/library/import-manual', (req, res) => {

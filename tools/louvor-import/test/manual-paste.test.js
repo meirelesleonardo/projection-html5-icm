@@ -63,6 +63,34 @@ describe('normalizeManualPaste', () => {
     assert.equal(r.title, 'i12 - Meu Louvor');
   });
 
+  it('marks Cantar Nx and voice cues without repeating lyrics', () => {
+    const r = normalizeManualPaste(
+      [
+        'Vozes',
+        'Estrofe',
+        'Cantar 3x',
+        '',
+        '(HOMENS)',
+        'Linha dos homens',
+        '',
+        '(MULHERES)',
+        'Linha das mulheres',
+        '',
+        'Amém (V)',
+      ].join('\n')
+    );
+    const slides = r.content.split('\n\n');
+    assert.match(slides[0], /Estrofe/);
+    assert.match(slides[0], /<font color="yellow"><i>\(3X\)<\/i><\/font>/);
+    assert.doesNotMatch(slides[0], /Cantar 3x/i);
+    assert.match(slides[1], /<font color="yellow"><i>\(HOMENS\)<\/i><\/font>/);
+    assert.match(slides[1], /Linha dos homens/);
+    assert.match(slides[2], /<font color="yellow"><i>\(MULHERES\)<\/i><\/font>/);
+    assert.match(slides[2], /Linha das mulheres/);
+    assert.match(slides[3], /^Amém\n/);
+    assert.match(slides[3], /<font color="yellow"><i>\(V\)<\/i><\/font>/);
+  });
+
   it('converts BIS to yellow without duplicating', () => {
     const r = normalizeManualPaste('X\nVerso\n\n(BIS)\n');
     const slides = r.content.split('\n\n');

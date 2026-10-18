@@ -72,6 +72,7 @@ function buildMergePlan(incomingSongs, targetFolder, options = {}) {
     (() => {
       throw new Error('allocImportNumber required');
     });
+  const assignImportNumber = options.assignImportNumber !== false;
 
   const folderOp = targetFolder ? 'UPDATE' : 'INSERT';
   const index = indexFolderSongs(targetFolder || { songs: [] });
@@ -189,11 +190,18 @@ function buildMergePlan(incomingSongs, targetFolder, options = {}) {
       } else if (hits.length > 1) {
         status = 'REVIEW';
         warnings.push('múltiplas correspondências por nome');
+        if (assignImportNumber) {
+          const n = takeImportNumber();
+          resolvedTitle = `i${n} - ${id.titleRaw || inc.title}`;
+        } else {
+          resolvedTitle = id.titleRaw || inc.title;
+        }
+      } else if (assignImportNumber) {
         const n = takeImportNumber();
         resolvedTitle = `i${n} - ${id.titleRaw || inc.title}`;
+        status = 'NEW';
       } else {
-        const n = takeImportNumber();
-        resolvedTitle = `i${n} - ${id.titleRaw || inc.title}`;
+        resolvedTitle = id.titleRaw || inc.title;
         status = 'NEW';
       }
     }
