@@ -4,21 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { randomUUID } = require('crypto');
+const { findSoffice, findPdftoppm } = require('./which-tool');
 
 const DECK_EXTS = /\.(pptx|ppt|odp|pdf)$/i;
-
-function which(cmd) {
-  return new Promise((resolve) => {
-    const child = spawn('sh', ['-c', `command -v ${cmd}`]);
-    let out = '';
-    child.stdout.on('data', (d) => {
-      out += d.toString();
-    });
-    child.on('close', (code) => {
-      resolve(code === 0 ? out.trim() : null);
-    });
-  });
-}
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -86,9 +74,22 @@ function deleteDeck(decksDir, id) {
 }
 
 async function checkTools() {
-  const soffice = (await which('soffice')) || (await which('libreoffice'));
-  const pdftoppm = await which('pdftoppm');
+  const soffice = findSoffice();
+  const pdftoppm = findPdftoppm();
   return { soffice, pdftoppm };
+}
+
+function missingToolMessage(tool) {
+  if (tool === 'pdftoppm' && process.platform === 'win32') {
+    return 'pdftoppm não encontrado. Instale o Poppler e coloque pdftoppm.exe no PATH.';
+  }
+  if (tool === 'pdftoppm') {
+    return 'pdftoppm não encontrado. Instale: sudo apt install -y poppler-utils';
+  }
+  if (process.platform === 'win32') {
+    return 'LibreOffice não encontrado. Instale o LibreOffice (soffice.exe em Program Files) ou coloque-o no PATH.';
+  }
+  return 'LibreOffice não encontrado. Instale: sudo apt install -y libreoffice-impress';
 }
 
 /**
@@ -97,9 +98,7 @@ async function checkTools() {
 async function convertUploadedDeck(decksDir, uploadedPath, originalName) {
   const tools = await checkTools();
   if (!tools.pdftoppm) {
-    const err = new Error(
-      'pdftoppm não encontrado. Instale: sudo apt install -y poppler-utils'
-    );
+    const err = new Error(missingToolMessage('pdftoppm'));
     err.code = 'MISSING_TOOLS';
     throw err;
   }
@@ -122,9 +121,7 @@ async function convertUploadedDeck(decksDir, uploadedPath, originalName) {
       fs.copyFileSync(uploadedPath, pdfPath);
     } else {
       if (!tools.soffice) {
-        const err = new Error(
-          'LibreOffice não encontrado. Instale: sudo apt install -y libreoffice-impress'
-        );
+        const err = new Error(missingToolMessage('soffice'));
         err.code = 'MISSING_TOOLS';
         throw err;
       }

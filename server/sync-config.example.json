@@ -1,0 +1,5 @@
+{
+  "port": 3090,
+  "token": "troque-este-token",
+  "dataDir": "data"
+}

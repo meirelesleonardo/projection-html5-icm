@@ -20,12 +20,21 @@ const {
   DECK_EXTS,
 } = require('./decks');
 const { httpsEnabled, ensureSelfSignedCerts } = require('./https-certs');
+const { resolveAppRoot } = require('./app-root');
+const {
+  shouldOpenView,
+  viewUrl,
+  startupAction,
+  openView,
+  probeListening,
+} = require('./open-view');
+const { runLibrarySync, createSyncScheduler, SYNC_INTERVAL_MS } = require('./library-sync');
 const { createLibraryStore } = require('./library-store');
 const { validatePutBody, MAX_LIBRARY_BYTES } = require('./library-validate');
 const libraryArchive = require('./library-archive');
 
-const ROOT = path.join(__dirname, '..');
-const configPath = path.join(__dirname, 'config.json');
+const ROOT = resolveAppRoot();
+const configPath = path.join(ROOT, 'server', 'config.json');
 const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
 const useHttps = httpsEnabled(config);
@@ -224,6 +233,7 @@ app.put('/api/library', (req, res) => {
       `[library] update success ip=${ip} version=${result.version} bytes≈${approx}`
     );
     setLibraryHeaders(res, result);
+    publishLibrary(result, 'local');
     return res.status(200).json({
       ok: true,
       version: result.version,
@@ -263,6 +273,7 @@ function handleLibraryArchiveMutation(req, res, mutator, label) {
     const result = libraryStore.saveAtomic(next, (req.body && req.body.version) != null ? req.body.version : loaded.version);
     console.log(`[library] ${label} ip=${ip} version=${result.version}`);
     setLibraryHeaders(res, result);
+    publishLibrary(result, 'local');
     return res.status(200).json({
       ok: true,
       version: result.version,
@@ -338,6 +349,7 @@ app.post('/api/library/restore', (req, res) => {
   try {
     const result = importService.restoreBackup(req.body && req.body.backup, req.body && req.body.version);
     setLibraryHeaders(res, result);
+    publishLibrary(result, 'local');
     return res.json({ ok: true, version: result.version, updatedAt: result.updatedAt });
   } catch (e) {
     const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
@@ -422,6 +434,7 @@ app.post('/api/imports/:id/apply', (req, res) => {
       expectedVersion: req.body && req.body.version,
     });
     setLibraryHeaders(res, { version: result.version, updatedAt: result.updatedAt, etag: String(result.version) });
+    publishLibrary(result, 'local');
     return res.json(result);
   } catch (e) {
     const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
@@ -489,6 +502,7 @@ app.post('/api/sources/louvando/import', (req, res) => {
         updatedAt: result.updatedAt,
         etag: String(result.version),
       });
+      publishLibrary(result, 'local');
       return res.status(200).json(result);
     })
     .catch((e) => {
@@ -524,6 +538,7 @@ app.post('/api/library/import-manual', (req, res) => {
       updatedAt: result.updatedAt,
       etag: String(result.version),
     });
+    publishLibrary(result, 'local');
     return res.status(200).json(result);
   } catch (e) {
     const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
@@ -687,6 +702,59 @@ function envelope(fn, data, extra = {}) {
     ...extra,
   };
 }
+
+let syncScheduler = null;
+
+function publishLibrary(result, action) {
+  if (!result) return;
+  room.broadcast(
+    envelope('libraryUpdated', {
+      version: result.version,
+      updatedAt: result.updatedAt || null,
+      action: action || 'local',
+      contentHash: result.contentHash || null,
+    })
+  );
+  if (syncScheduler) syncScheduler.kick(action || 'save');
+}
+
+function syncResultStatus(result) {
+  if (!result) return 500;
+  if (result.action === 'offline') return 503;
+  if (result.action === 'error') return result.status || 502;
+  return 200;
+}
+
+app.post('/api/library/sync', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  const force = req.body && (req.body.force === 'push' || req.body.force === 'pull') ? req.body.force : null;
+  const run = syncScheduler
+    ? syncScheduler.kick('manual', { force })
+    : runLibrarySync({ store: libraryStore, config, force });
+  Promise.resolve(run)
+    .then((result) => res.status(syncResultStatus(result)).json(result))
+    .catch((err) => {
+      return res.status(500).json({ action: 'error', error: err.message || 'falha ao sincronizar' });
+    });
+});
+
+app.get('/api/library/sync/status', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const loaded = libraryStore.load();
+    const enabled = Boolean(config.syncUrl && config.syncToken);
+    return res.json({
+      enabled,
+      version: loaded.version,
+      updatedAt: loaded.updatedAt,
+      contentHash: loaded.contentHash,
+      syncedHash: loaded.syncedHash,
+      dirty: Boolean(loaded.syncedHash) && loaded.syncedHash !== loaded.contentHash,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || 'falha ao ler status' });
+  }
+});
 
 const CONTROL_FUNCTIONS = new Set([
   'reloadReveal',
@@ -868,19 +936,77 @@ function onListenError(err) {
 server.on('error', onListenError);
 wss.on('error', onListenError);
 
-server.listen(config.port, '0.0.0.0', () => {
-  const ips = listLanIps();
-  const proto = config.protocol || 'http';
-  console.log(`[server] Projeção ICM v${config.version} on port ${config.port} (${proto})`);
-  console.log(`[server] Local: ${proto}://127.0.0.1:${config.port}/`);
-  ips.forEach((i) => {
-    console.log(`[server] LAN  : ${proto}://${i.address}:${config.port}/mobile.html`);
-  });
-  if (useHttps) {
-    console.log('[server] HTTPS autoassinado — no celular aceite o aviso do certificado uma vez.');
-    console.log('[server] Câmera/WebRTC exige este HTTPS (HTTP bloqueia getUserMedia na LAN).');
-  } else {
-    console.log('[server] HTTP — para Transmitir câmera, inicie com HTTPS=1 npm start');
-  }
-  if (config.roomPin) console.log(`[server] PIN  : ${config.roomPin}`);
+syncScheduler = createSyncScheduler({
+  intervalMs: SYNC_INTERVAL_MS,
+  run(runOptions) {
+    return runLibrarySync({
+      store: libraryStore,
+      config,
+      force: runOptions && runOptions.force,
+    });
+  },
+  onResult(result, reason) {
+    if (!result || result.action === 'disabled') return;
+    if (result.action === 'offline') return;
+    if (result.action === 'idle') {
+      if (reason === 'startup' || reason === 'manual') console.log('[sync] em dia');
+      return;
+    }
+    console.log('[sync] ' + result.action + (reason ? ' (' + reason + ')' : ''));
+    if (result.action === 'conflict') {
+      console.warn('[sync] conflito — escolha no painel qual base fica');
+    }
+    if (result.action === 'pulled' || result.action === 'pushed') {
+      room.broadcast(
+        envelope('libraryUpdated', {
+          version: result.version,
+          updatedAt: result.updatedAt || null,
+          action: result.action,
+          contentHash: result.contentHash || null,
+        })
+      );
+    }
+  },
 });
+
+function begin() {
+  const openEnabled = shouldOpenView(process.env, process.pkg);
+  const url = viewUrl(config);
+  const startListen = () => {
+    server.listen(config.port, '0.0.0.0', () => {
+      const ips = listLanIps();
+      const proto = config.protocol || 'http';
+      console.log(`[server] Projeção ICM v${config.version} on port ${config.port} (${proto})`);
+      console.log(`[server] Local: ${proto}://127.0.0.1:${config.port}/`);
+      ips.forEach((i) => {
+        console.log(`[server] LAN  : ${proto}://${i.address}:${config.port}/mobile.html`);
+      });
+      if (useHttps) {
+        console.log('[server] HTTPS autoassinado — no celular aceite o aviso do certificado uma vez.');
+        console.log('[server] Câmera/WebRTC exige este HTTPS (HTTP bloqueia getUserMedia na LAN).');
+      } else {
+        console.log('[server] HTTP — para Transmitir câmera, inicie com HTTPS=1 npm start');
+      }
+      if (config.roomPin) console.log(`[server] PIN  : ${config.roomPin}`);
+      if (openEnabled) openView(url);
+      if (config.syncUrl && config.syncToken) syncScheduler.kick('startup');
+      if (config.syncUrl && config.syncToken) syncScheduler.startInterval();
+    });
+  };
+
+  if (!openEnabled) {
+    startListen();
+    return;
+  }
+  probeListening(config.port).then((portOpen) => {
+    if (startupAction(portOpen, true) === 'exit-open') {
+      console.log('[server] Porta ' + config.port + ' já em uso — abrindo a view.');
+      openView(url);
+      process.exit(0);
+      return;
+    }
+    startListen();
+  });
+}
+
+begin();

@@ -353,6 +353,79 @@ function saveLibraryToServer() {
   });
 }
 
+function setSyncChoiceVisible(on) {
+  var localBtn = document.getElementById('btnSyncUseLocal');
+  var remoteBtn = document.getElementById('btnSyncUseRemote');
+  if (localBtn) localBtn.hidden = !on;
+  if (remoteBtn) remoteBtn.hidden = !on;
+}
+
+function applySyncResult(res) {
+  var body = (res && res.body) || {};
+  var action = body.action;
+  if (action === 'disabled') {
+    setSyncChoiceVisible(false);
+    setLibrarySyncStatus('Biblioteca: sincronização não configurada', 'warn');
+    return body;
+  }
+  if (action === 'offline') {
+    setSyncChoiceVisible(false);
+    setLibrarySyncStatus('Biblioteca: sem conexão com a VPS', '');
+    return body;
+  }
+  if (action === 'conflict') {
+    setSyncChoiceVisible(true);
+    setLibrarySyncStatus('Biblioteca: conflito com a VPS — escolha qual base fica', 'warn');
+    return body;
+  }
+  setSyncChoiceVisible(false);
+  if (action === 'pulled') {
+    return fetchLibraryFromServer().then(function (got) {
+      applyLibraryFromObject(got.library, { version: got.version });
+      setLibrarySyncStatus('Biblioteca: atualizada da VPS (v' + got.version + ')', 'ok');
+      return body;
+    });
+  }
+  if (action === 'pushed' || action === 'idle') {
+    if (body.version != null) markLibraryClean(body.version);
+    setLibrarySyncStatus(
+      action === 'pushed'
+        ? 'Biblioteca: enviada à VPS (v' + body.version + ')'
+        : 'Biblioteca: em dia com a VPS (v' + (body.version != null ? body.version : libraryVersion) + ')',
+      'ok'
+    );
+    return body;
+  }
+  setLibrarySyncStatus('Biblioteca: falha ao sincronizar', 'bad');
+  if (body.error) alert(body.error);
+  return body;
+}
+
+function syncLibraryNow(force) {
+  if (!libraryServerMode) {
+    alert('Sincronizar só funciona via http(s):// (abra pelo IP do mini PC).');
+    return Promise.reject(new Error('not_http'));
+  }
+  setLibrarySyncStatus('Biblioteca: sincronizando…', '');
+  return ensureLibraryPin().then(function (pin) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (pin) headers['X-Room-Pin'] = pin;
+    var payload = {};
+    if (force) payload.force = force;
+    return fetch('/api/library/sync', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload),
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        return { ok: r.ok, status: r.status, body: j };
+      }).catch(function () {
+        return { ok: false, status: r.status, body: { action: 'error', error: 'resposta inválida' } };
+      });
+    });
+  }).then(applySyncResult);
+}
+
 function librariesEqual(a, b) {
   try {
     return JSON.stringify(a) === JSON.stringify(b);
@@ -902,6 +975,20 @@ $("#btnSaveLibraryServer").click(function () {
     dados[pastaAtiva].songs[louvorAtivo].content = $("#content").val();
   }
   saveLibraryToServer().catch(function () {});
+});
+
+$("#btnSyncLibrary").click(function () {
+  syncLibraryNow().catch(function () {});
+});
+
+$("#btnSyncUseLocal").click(function () {
+  if (!confirm('Enviar esta base substitui a cópia da VPS. Continuar?')) return;
+  syncLibraryNow('push').catch(function () {});
+});
+
+$("#btnSyncUseRemote").click(function () {
+  if (!confirm('Baixar a base da VPS substitui os louvores deste PC. Continuar?')) return;
+  syncLibraryNow('pull').catch(function () {});
 });
 
 $("#btnUseServerLibrary").click(function () {
@@ -1853,6 +1940,24 @@ setTimeout(hideLoadingOverlay, 8000);
       });
       t.on('playlistUpdate', function (pl) {
         applyRemotePlaylist(pl);
+      });
+      t.on('libraryUpdated', function (data) {
+        if (!data) return;
+        if (libraryDirty) {
+          setLibrarySyncStatus('Biblioteca: chegou outra versão, mas há alterações locais', 'warn');
+          return;
+        }
+        if (data.action === 'pulled' || data.action === 'local') {
+          fetchLibraryFromServer().then(function (got) {
+            applyLibraryFromObject(got.library, { version: got.version });
+            setLibrarySyncStatus('Biblioteca: atualizada (v' + got.version + ')', 'ok');
+          }).catch(function () {});
+          return;
+        }
+        if (data.version != null) {
+          markLibraryClean(data.version);
+          setLibrarySyncStatus('Biblioteca: sincronizada (v' + data.version + ')', 'ok');
+        }
       });
       t.on('error', function (data) {
         if (data && data.code === 'no_control') {

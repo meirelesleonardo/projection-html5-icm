@@ -7,7 +7,8 @@
     "start": "node server/index.js",
     "start:https": "HTTPS=1 node server/index.js",
     "dev": "node server/index.js",
-    "test": "node --test server/library-store.test.js server/library-archive.test.js server/import/test/*.test.js tools/louvor-import/test/*.test.js",
+    "test": "node --test server/*.test.js server/import/test/*.test.js tools/louvor-import/test/*.test.js",
+    "pack:win": "bash tools/windows-pack/build.sh",
     "louvor:test": "node --test tools/louvor-import/test/*.test.js server/import/test/*.test.js",
     "louvor:roundtrip": "node tools/louvor-import/cli.js roundtrip-check",
     "louvor:sample-2022": "node tools/louvor-import/cli.js sample-2022"
@@ -19,6 +20,7 @@
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
     "qrcode": "^1.5.4",
+    "selfsigned": "^2.4.1",
     "uuid": "^11.0.5",
     "ws": "^8.18.0"
   }

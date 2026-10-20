@@ -1917,6 +1917,9 @@
       if (state.youControl) flushControlWaiters();
       updateControlUi();
     });
+    transport.on('libraryUpdated', function () {
+      loadLibrary();
+    });
     transport.on('controlChanged', function (data) {
       state.youControl = transport.clientId === data.controllerId;
       if (state.youControl) flushControlWaiters();

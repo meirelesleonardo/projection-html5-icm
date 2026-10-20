@@ -28,6 +28,11 @@
 | [SPEC-07](SPEC-07-pwa-android.md) | PWA / app Android | F4 |
 | [SPEC-08](SPEC-08-webrtc-stream.md) | Stream de vídeo do celular | F5 |
 | [SPEC-09](SPEC-09-descoberta-pareamento.md) | Descoberta de rede e pareamento | F1 |
+| [SPEC-10](SPEC-10-pacote-windows.md) | Pacote Windows | F6 |
+| [SPEC-11](SPEC-11-abrir-view.md) | Abrir a view no navegador padrão | F6 |
+| [SPEC-12](SPEC-12-paridade-windows.md) | Paridade Windows (ferramentas e certificado) | F6 |
+| [SPEC-13](SPEC-13-aceite-windows.md) | Aceite no PC Windows | F6 |
+| [SPEC-14](SPEC-14-sync-vps.md) | Sync da base com a VPS | F6 |
 
 ## Documentos relacionados
 

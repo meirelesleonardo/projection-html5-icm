@@ -40,8 +40,10 @@ Testes da persistência: `npm test`.
 | Doc | Conteúdo |
 |-----|----------|
 | [docs/architecture.md](docs/architecture.md) | Arquitetura LAN / WebSocket |
-| [docs/specs/](docs/specs/README.md) | SPECs 01–09 |
+| [docs/specs/](docs/specs/README.md) | SPECs 01–14 |
 | [docs/install-zorin.md](docs/install-zorin.md) | Instalação no Zorin (hotspot, systemd, kiosk) |
+| [docs/windows-exe.md](docs/windows-exe.md) | Executável Windows, firewall e checklist |
+| [docs/sync-vps.md](docs/sync-vps.md) | Sincronizar a base de louvores com a VPS |
 | [docs/manual-mobile.md](docs/manual-mobile.md) | Uso do painel no celular |
 | [docs/manual-video.md](docs/manual-video.md) | Vídeos MP4 na playlist |
 | [docs/app-android-pwa.md](docs/app-android-pwa.md) | PWA e Capacitor |

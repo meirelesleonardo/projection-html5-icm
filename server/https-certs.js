@@ -2,11 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-
-const CERTS_DIR = path.join(__dirname, 'certs');
-const KEY_PATH = path.join(CERTS_DIR, 'key.pem');
-const CERT_PATH = path.join(CERTS_DIR, 'cert.pem');
+const selfsigned = require('selfsigned');
+const { resolveAppRoot } = require('./app-root');
 
 function httpsEnabled(config) {
   if (process.env.HTTPS === '1' || process.env.HTTPS === 'true') return true;
@@ -14,77 +11,63 @@ function httpsEnabled(config) {
   return Boolean(config && config.https);
 }
 
-function ensureSelfSignedCerts() {
-  fs.mkdirSync(CERTS_DIR, { recursive: true });
-  if (fs.existsSync(KEY_PATH) && fs.existsSync(CERT_PATH)) {
+function certPaths(certsDir) {
+  const dir = certsDir || path.join(resolveAppRoot(), 'server', 'certs');
+  return {
+    dir,
+    key: path.join(dir, 'key.pem'),
+    cert: path.join(dir, 'cert.pem'),
+  };
+}
+
+function generateSelfSignedPem() {
+  const pems = selfsigned.generate(
+    [{ name: 'commonName', value: 'projection-icm' }],
+    {
+      algorithm: 'sha256',
+      days: 825,
+      keySize: 2048,
+      extensions: [
+        {
+          name: 'subjectAltName',
+          altNames: [
+            { type: 2, value: 'localhost' },
+            { type: 2, value: 'projection-icm.local' },
+            { type: 7, ip: '127.0.0.1' },
+          ],
+        },
+      ],
+    }
+  );
+  if (!pems || !pems.private || !pems.cert) {
+    throw new Error('Falha ao gerar certificado autoassinado');
+  }
+  return { key: pems.private, cert: pems.cert };
+}
+
+function ensureSelfSignedCerts(certsDir) {
+  const paths = certPaths(certsDir);
+  fs.mkdirSync(paths.dir, { recursive: true });
+  if (fs.existsSync(paths.key) && fs.existsSync(paths.cert)) {
     return {
-      key: fs.readFileSync(KEY_PATH),
-      cert: fs.readFileSync(CERT_PATH),
+      key: fs.readFileSync(paths.key),
+      cert: fs.readFileSync(paths.cert),
     };
   }
 
-  console.log('[https] Gerando certificado autoassinado em server/certs/ …');
-  const result = spawnSync(
-    'openssl',
-    [
-      'req',
-      '-x509',
-      '-newkey',
-      'rsa:2048',
-      '-keyout',
-      KEY_PATH,
-      '-out',
-      CERT_PATH,
-      '-days',
-      '825',
-      '-nodes',
-      '-subj',
-      '/CN=projection-icm/O=Projecao ICM/C=BR',
-      '-addext',
-      'subjectAltName=DNS:localhost,DNS:projection-icm.local,IP:127.0.0.1',
-    ],
-    { encoding: 'utf8' }
-  );
-
-  if (result.status !== 0 || !fs.existsSync(KEY_PATH) || !fs.existsSync(CERT_PATH)) {
-    // Older openssl without -addext
-    const fallback = spawnSync(
-      'openssl',
-      [
-        'req',
-        '-x509',
-        '-newkey',
-        'rsa:2048',
-        '-keyout',
-        KEY_PATH,
-        '-out',
-        CERT_PATH,
-        '-days',
-        '825',
-        '-nodes',
-        '-subj',
-        '/CN=projection-icm',
-      ],
-      { encoding: 'utf8' }
-    );
-    if (fallback.status !== 0 || !fs.existsSync(KEY_PATH)) {
-      const err =
-        (result.stderr || fallback.stderr || '').trim() ||
-        'openssl indisponível — instale openssl ou coloque key.pem/cert.pem em server/certs/';
-      throw new Error(err);
-    }
-  }
-
+  console.log('[https] Gerando certificado autoassinado em ' + paths.dir);
+  const pems = generateSelfSignedPem();
+  fs.writeFileSync(paths.key, pems.key);
+  fs.writeFileSync(paths.cert, pems.cert);
   return {
-    key: fs.readFileSync(KEY_PATH),
-    cert: fs.readFileSync(CERT_PATH),
+    key: fs.readFileSync(paths.key),
+    cert: fs.readFileSync(paths.cert),
   };
 }
 
 module.exports = {
   httpsEnabled,
   ensureSelfSignedCerts,
-  KEY_PATH,
-  CERT_PATH,
-  CERTS_DIR,
+  generateSelfSignedPem,
+  certPaths,
 };

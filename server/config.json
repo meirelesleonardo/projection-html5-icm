@@ -7,5 +7,7 @@
   "hostname": "projection-icm.local",
   "udpDiscoveryPort": 41234,
   "serviceName": "Projeção ICM",
-  "version": "2.0.0"
+  "version": "2.0.0",
+  "syncUrl": "",
+  "syncToken": ""
 }

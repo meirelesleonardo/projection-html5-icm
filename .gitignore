@@ -5,8 +5,13 @@ media/videos/*
 !media/videos/.gitkeep
 data/backups/*
 !data/backups/.gitkeep
+data/sync-conflicts/*
+!data/sync-conflicts/.gitkeep
 server/certs/*.pem
 !server/certs/.gitkeep
+server/sync-config.json
+dist/
+tools/windows-pack/.cache/
 .DS_Store
 *.log
 .env
