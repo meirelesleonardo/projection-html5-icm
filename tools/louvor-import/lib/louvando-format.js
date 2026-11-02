@@ -5,8 +5,12 @@
  * A CORO section repeats after each following stanza.
  * A split chorus keeps the CORO label on every slide.
  * FINAL and INSTRUMENTOS stay in place and are not followed by another chorus.
+ * Number 0 means the source has no catalog number.
+ * "Repetir o louvor" and "voltar início" repeat the slides already built.
  * Splits a section taller than the projection budget, preferring a phrase end.
  */
+
+const { detectCommand } = require('./manual-paste');
 
 const { classifyLabel, formatYellowLabel, extractTrailingCue } = require('./markers');
 
@@ -60,6 +64,15 @@ function cleanTone(tone) {
   return t;
 }
 
+function catalogNumber(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
 function formatLouvandoTitle(praise) {
   const rawTitle = String((praise && praise.title) || '').trim();
   if (!rawTitle) {
@@ -70,10 +83,8 @@ function formatLouvandoTitle(praise) {
   }
   const tone = cleanTone(praise && praise.tone);
   const withTone = tone ? `${rawTitle} (${tone})` : rawTitle;
-  const num = praise && praise.number;
-  if (num != null && String(num).trim() !== '' && !Number.isNaN(Number(num))) {
-    return `${Number(num)} - ${withTone}`;
-  }
+  const num = catalogNumber(praise && praise.number);
+  if (num != null) return `${num} - ${withTone}`;
   return withTone;
 }
 
@@ -290,6 +301,37 @@ function themeNameOf(praise) {
   return praise.theme || null;
 }
 
+function sectionRepeatCommand(sec) {
+  if (sec.label || sec.lines.length !== 1) return null;
+  const line = sec.lines[0];
+  if (!line || typeof line === 'object') return null;
+  return detectCommand([String(line)]);
+}
+
+function applyRepeatCommand(cmd, slides, verseGroups, chorusSlides, warnings) {
+  if (cmd.kind === 'repeat_song') {
+    if (slides.length) slides.push(...slides.slice());
+    else warnings.push('repetir o louvor sem conteúdo anterior');
+    return;
+  }
+  if (cmd.kind === 'repeat_first') {
+    const first = verseGroups[0];
+    if (first && first.length) slides.push(...first);
+    else warnings.push('repetir primeira estrofe: nenhuma estrofe ainda');
+    return;
+  }
+  if (cmd.kind === 'repeat_chorus') {
+    if (chorusSlides && chorusSlides.length) slides.push(...chorusSlides);
+    else warnings.push('repetir o coro: coro ainda não definido');
+    return;
+  }
+  if (cmd.kind === 'repeat_verse_n') {
+    const group = verseGroups[cmd.n - 1];
+    if (group && group.length) slides.push(...group);
+    else warnings.push(`repetir estrofe ${cmd.n}: estrofe inexistente`);
+  }
+}
+
 /**
  * @param {object} praise - Louvando praise payload (title, number, tone, lyrics, collection)
  * @returns {{ title: string, libraryName: string, content: string, slides: string[], warnings: string[] }}
@@ -301,8 +343,14 @@ function formatLouvandoPraise(praise) {
   const sections = tokensToSections(htmlToTokens(praise && praise.lyrics));
   const warnings = [];
   const slides = [];
+  const verseGroups = [];
   let chorusSlides = null;
   for (const sec of sections) {
+    const cmd = sectionRepeatCommand(sec);
+    if (cmd) {
+      applyRepeatCommand(cmd, slides, verseGroups, chorusSlides, warnings);
+      continue;
+    }
     const labelHtml = sec.label ? formatYellowLabel(sec.label) : null;
     const chorus = isChorusLabel(sec.label);
     const made = paginateSection(labelHtml, sec.lines, chorus);
@@ -316,6 +364,7 @@ function formatLouvandoPraise(praise) {
       if (!duplicate) slides.push(...made.slides);
       continue;
     }
+    if (!isClosingLabel(sec.label)) verseGroups.push(made.slides);
     slides.push(...made.slides);
     if (chorusSlides && !isClosingLabel(sec.label)) {
       slides.push(...chorusSlides);
@@ -328,14 +377,13 @@ function formatLouvandoPraise(praise) {
     err.code = 'EMPTY_BODY';
     throw err;
   }
-  const num = praise && praise.number;
   return {
     title,
     libraryName,
     content,
     slides,
     warnings,
-    number: num != null && String(num).trim() !== '' && !Number.isNaN(Number(num)) ? Number(num) : null,
+    number: catalogNumber(praise && praise.number),
     tone: cleanTone(praise && praise.tone) || null,
     collection: collection || null,
     theme: themeNameOf(praise),
@@ -347,7 +395,7 @@ function mapSearchHit(hit) {
   const theme = hit && hit.theme && hit.theme.name ? hit.theme.name : '';
   return {
     id: String((hit && (hit.short_id || hit.id)) || ''),
-    number: hit && hit.number != null ? hit.number : null,
+    number: catalogNumber(hit && hit.number),
     title: (hit && hit.title) || '',
     tone: cleanTone(hit && hit.tone) || null,
     collection,

@@ -50,6 +50,13 @@ describe('normalizeManualPaste', () => {
     assert.equal(r.title, 'Nome Livre');
   });
 
+  it('expands voltar inicio as the whole song', () => {
+    const r = normalizeManualPaste(
+      ['Título', 'A', '', 'B', '', 'voltar início'].join('\n')
+    );
+    assert.deepEqual(r.content.split('\n\n'), ['A', 'B', 'A', 'B']);
+  });
+
   it('expands repetir o louvor', () => {
     const r = normalizeManualPaste(
       ['Título', 'A', '', 'B', '', 'repetir o louvor'].join('\n')

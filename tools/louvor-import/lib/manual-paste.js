@@ -17,6 +17,8 @@ const IMPORT_TITLE_RE = /^i(\d+)\s*[-–—]\s*(.+)$/i;
 
 const REPEAT_LOUVOR_RE =
   /^(repetir(\s+o)?\s+louvor|bis(\s+o)?\s+louvor)$/i;
+const REPEAT_FROM_START_RE =
+  /^voltar(\s+(ao|o|para o|pro))?\s+in[ií]cio$/i;
 const REPEAT_FIRST_RE =
   /^(repetir(\s+a)?\s+(primeira|1[aª]?)\s+estrofe)$/i;
 const REPEAT_CORO_RE = /^(repetir(\s+o)?\s+coro)$/i;
@@ -55,10 +57,18 @@ function parseChorusHeader(line) {
   };
 }
 
+function normalizeCommandLine(line) {
+  return String(line || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.:;…]+$/g, '')
+    .trim();
+}
+
 function detectCommand(lines) {
   if (lines.length !== 1) return null;
-  const t = lines[0].trim();
-  if (REPEAT_LOUVOR_RE.test(t)) return { kind: 'repeat_song' };
+  const t = normalizeCommandLine(lines[0]);
+  if (REPEAT_LOUVOR_RE.test(t) || REPEAT_FROM_START_RE.test(t)) return { kind: 'repeat_song' };
   if (REPEAT_FIRST_RE.test(t)) return { kind: 'repeat_first' };
   if (REPEAT_CORO_RE.test(t)) return { kind: 'repeat_chorus' };
   const m = t.match(REPEAT_ESTROFE_N_RE);

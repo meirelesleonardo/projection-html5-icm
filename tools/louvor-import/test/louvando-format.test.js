@@ -61,6 +61,19 @@ describe('formatLouvandoPraise', () => {
     assert.equal(song.warnings.length, 1);
   });
 
+  it('treats number 0 as unnumbered', () => {
+    const song = formatLouvandoPraise({
+      number: 0,
+      title: 'EU CLAMO PELO SANGUE DE JESUS',
+      tone: '',
+      collection: { name: 'Avulsos' },
+      lyrics: '<p>Eu clamo pelo sangue de Jesus.</p>',
+    });
+    assert.equal(song.title, 'EU CLAMO PELO SANGUE DE JESUS');
+    assert.equal(song.number, null);
+    assert.doesNotMatch(song.title, /^0\b/);
+  });
+
   it('formats a numbered title and keeps the collection name', () => {
     const song = formatLouvandoPraise({
       number: 455,
@@ -192,6 +205,56 @@ describe('formatLouvandoPraise', () => {
     assert.equal(song.slides[2], 'Verso dois');
     assert.equal(song.slides[3], song.slides[1]);
   });
+
+  it('expands repetir o louvor and ignores a fake number 0', () => {
+    const song = formatLouvandoPraise({
+      number: 0,
+      title: 'EU CLAMO PELO SANGUE DE JESUS',
+      tone: '',
+      collection: { name: 'Avulsos' },
+      lyrics:
+        '<p>Eu clamo pelo sangue de Jesus,</p>' +
+        '<p>Que traz a comunhão, libertação e poder.</p>' +
+        '<p>Entrego a ti, Senhor todo o meu ser.</p>' +
+        '<p>&nbsp;</p>' +
+        '<p>Purifica-me, Senhor, com teu sangue remidor. </p>' +
+        '<p>Justifica-me, Jesus, com este sangue</p>' +
+        '<p>Que um dia derramaste naquela cruz,</p>' +
+        '<p>Só por me amar e vida eterna dar.</p>' +
+        '<p>&nbsp;</p>' +
+        '<p><strong>Instrumentos</strong></p>' +
+        '<p>&nbsp;</p>' +
+        '<p><strong>Repetir o louvor</strong></p>',
+    });
+    assert.equal(song.title, 'EU CLAMO PELO SANGUE DE JESUS');
+    assert.equal(song.number, null);
+    assert.equal(song.slides.length, 6);
+    assert.match(song.slides[0], /^Eu clamo pelo sangue de Jesus,/);
+    assert.match(song.slides[1], /^Purifica-me, Senhor,/);
+    assert.match(song.slides[2], /INSTRUMENTOS/);
+    assert.equal(song.slides[3], song.slides[0]);
+    assert.equal(song.slides[4], song.slides[1]);
+    assert.equal(song.slides[5], song.slides[2]);
+    assert.doesNotMatch(song.content, /Repetir o louvor/i);
+  });
+
+  it('repeats only the first stanza or the whole song from voltar inicio', () => {
+    const first = formatLouvandoPraise({
+      title: 'PRIMEIRA',
+      collection: { name: 'Avulsos' },
+      lyrics:
+        '<p>Estrofe um</p><p>&nbsp;</p><p>Estrofe dois</p><p>&nbsp;</p>' +
+        '<p>Repetir a primeira estrofe</p>',
+    });
+    assert.deepEqual(first.slides, ['Estrofe um', 'Estrofe dois', 'Estrofe um']);
+
+    const again = formatLouvandoPraise({
+      title: 'INICIO',
+      collection: { name: 'Avulsos' },
+      lyrics: '<p>Estrofe um</p><p>&nbsp;</p><p>Estrofe dois</p><p>&nbsp;</p><p>Voltar início</p>',
+    });
+    assert.deepEqual(again.slides, ['Estrofe um', 'Estrofe dois', 'Estrofe um', 'Estrofe dois']);
+  });
 });
 
 describe('libraryNameForCollection', () => {
@@ -215,6 +278,7 @@ describe('mapSearchHit', () => {
     });
     assert.equal(hit.id, 'VsP0IV67jg');
     assert.equal(hit.number, null);
+    assert.equal(mapSearchHit({ short_id: 'ckgRsvBSKw', number: 0, title: 'EU CLAMO' }).number, null);
     assert.equal(hit.libraryName, 'Louvando CIA');
     assert.equal(hit.theme, '-');
   });
