@@ -2,7 +2,9 @@
 
 /**
  * Louvando.app praise JSON → official { title, content }.
- * Keeps section order (does not interleave CORO).
+ * A CORO section repeats after each following stanza.
+ * A split chorus keeps the CORO label on every slide.
+ * FINAL and INSTRUMENTOS stay in place and are not followed by another chorus.
  * Splits a section taller than the projection budget, preferring a phrase end.
  */
 
@@ -223,7 +225,29 @@ function emitLine(line) {
   return escapeHtml(line);
 }
 
-function paginateSection(labelHtml, lyricLines) {
+function isChorusLabel(label) {
+  return /^CORO(?:\s*\(\d+\s*X\))?:?$/i.test(String(label || '').trim());
+}
+
+function isClosingLabel(label) {
+  const text = String(label || '').trim();
+  return /^FINAL:?$/i.test(text) || /^INSTRUMENTOS:?$/i.test(text);
+}
+
+function slidesEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function endsWithSlides(slides, tail) {
+  if (!tail || !tail.length || slides.length < tail.length) return false;
+  return slidesEqual(slides.slice(slides.length - tail.length), tail);
+}
+
+function paginateSection(labelHtml, lyricLines, repeatLabel) {
   const slides = [];
   let pending = lyricLines.slice();
   let includeLabel = Boolean(labelHtml);
@@ -247,7 +271,7 @@ function paginateSection(labelHtml, lyricLines) {
     for (const line of chunk) parts.push(emitLine(line));
     slides.push(parts.join('\n'));
     if (pending.length) split = true;
-    includeLabel = false;
+    includeLabel = Boolean(pending.length) && Boolean(labelHtml) && Boolean(repeatLabel);
   }
   return { slides, split };
 }
@@ -277,11 +301,25 @@ function formatLouvandoPraise(praise) {
   const sections = tokensToSections(htmlToTokens(praise && praise.lyrics));
   const warnings = [];
   const slides = [];
+  let chorusSlides = null;
   for (const sec of sections) {
     const labelHtml = sec.label ? formatYellowLabel(sec.label) : null;
-    const made = paginateSection(labelHtml, sec.lines);
+    const chorus = isChorusLabel(sec.label);
+    const made = paginateSection(labelHtml, sec.lines, chorus);
     if (made.split) warnings.push('estrofe dividida para caber no telão');
+    if (chorus) {
+      const duplicate =
+        chorusSlides &&
+        slidesEqual(chorusSlides, made.slides) &&
+        endsWithSlides(slides, made.slides);
+      chorusSlides = made.slides;
+      if (!duplicate) slides.push(...made.slides);
+      continue;
+    }
     slides.push(...made.slides);
+    if (chorusSlides && !isClosingLabel(sec.label)) {
+      slides.push(...chorusSlides);
+    }
   }
   const content = slides.join('\n\n').trim();
   if (!content) {

@@ -48,15 +48,16 @@ describe('formatLouvandoPraise', () => {
     assert.equal(song.libraryName, 'Louvando CIA');
     assert.equal(song.title, 'CONHEÇAMOS E PROSSIGAMOS (E)');
     assert.doesNotMatch(song.title, /^i\d+/);
-    assert.equal(song.slides.length, 4);
-    assert.equal((song.content.match(/CORO/g) || []).length, 1);
+    assert.equal(song.slides.length, 5);
+    assert.equal((song.content.match(/CORO/g) || []).length, 2);
     assert.match(song.slides[0], /<font color="yellow"><i>CORO<\/i><\/font>/);
     assert.equal(song.slides[1].split('\n').length, 6);
     assert.match(song.slides[1], /Tua vontade, Senhor\.$/);
     assert.equal(song.slides[2].split('\n').length, 5);
     assert.match(song.slides[2], /^Rega a nossa vida, Senhor,/);
     assert.match(song.slides[2], /A chuva da tua unção\.$/);
-    assert.match(song.slides[3], /<font color="yellow"><i>FINAL:<\/i><\/font>/);
+    assert.equal(song.slides[3], song.slides[0]);
+    assert.match(song.slides[4], /<font color="yellow"><i>FINAL:<\/i><\/font>/);
     assert.equal(song.warnings.length, 1);
   });
 
@@ -109,6 +110,87 @@ describe('formatLouvandoPraise', () => {
     assert.equal(song.title, 'CURTO');
     assert.equal(song.slides.length, 1);
     assert.equal(song.slides[0].split('\n').length, 7);
+  });
+
+  it('repeats a split chorus label and interleaves it after each verse', () => {
+    const song = formatLouvandoPraise({
+      title: 'PEGA A TUA PARTE, IRMÃO',
+      tone: 'E',
+      collection: { name: 'Avulsos' },
+      lyrics:
+        '<p><strong>Coro</strong></p>' +
+        '<p>Pega a tua parte irmão,</p>' +
+        '<p>A mesa está bem farta,</p>' +
+        '<p>Pegue em abundância</p>' +
+        '<p>Pois a tua esperança</p>' +
+        '<p>Cristo não deixou morrer;</p>' +
+        '<p>Encha o teu celeiro</p>' +
+        '<p>De bênçãos espirituais,</p>' +
+        '<p>Deixa que transborde,</p>' +
+        '<p>Que derrame até que sobre,</p>' +
+        '<p>Bençãos nunca são de mais.</p>' +
+        '<p>&nbsp;</p>' +
+        '<p>A mesa preparada em nossa frente,</p>' +
+        '<p>O anjo com a bandeja em suas mãos,</p>' +
+        '<p>Dos servos a cabeça é ungida,</p>' +
+        '<p>Brasas vivas queimam o coração;</p>' +
+        '<p>Cristo a cada um vai perguntando:</p>' +
+        '<p>“Que queres que eu te faça, meu irmão”?</p>' +
+        '<p>Hoje as bênçãos vêm em abundância,</p>' +
+        '<p>Estende a Jesus Cristo a tua mão.</p>' +
+        '<p>&nbsp;</p>' +
+        '<p>O alimento desta festa é muito puro,</p>' +
+        '<p>As bênçãos vão de cura à salvação,</p>' +
+        '<p>Basta crer no nome de Jesus</p>' +
+        '<p>Ele te dará a perfeição</p>' +
+        '<p>Cristo a cada um vai perguntando:</p>' +
+        '<p>“Que queres que eu te faça, meu irmão”?</p>' +
+        '<p>Hoje as bênçãos vêm em abundância,</p>' +
+        '<p>É só clamar o sangue de Jesus.</p>' +
+        '<p>&nbsp;</p>' +
+        '<p><strong>Final:</strong></p>' +
+        '<p>Deixa que transborde</p>' +
+        '<p>Que derrame até que sobre</p>' +
+        '<p>Bênçãos nunca são de mais.</p>',
+    });
+    const coro = /<font color="yellow"><i>CORO<\/i><\/font>/;
+    assert.equal(song.slides.length, 10);
+    assert.match(song.slides[0], coro);
+    assert.match(song.slides[0], /Cristo não deixou morrer;$/);
+    assert.match(song.slides[1], coro);
+    assert.match(song.slides[1], /Bençãos nunca são de mais\.$/);
+    assert.match(song.slides[2], /^A mesa preparada em nossa frente,/);
+    assert.match(song.slides[3], /Estende a Jesus Cristo a tua mão\.$/);
+    assert.equal(song.slides[4], song.slides[0]);
+    assert.equal(song.slides[5], song.slides[1]);
+    assert.match(song.slides[6], /^O alimento desta festa é muito puro,/);
+    assert.equal(song.slides[7], song.slides[0]);
+    assert.equal(song.slides[8], song.slides[1]);
+    assert.match(song.slides[9], /<font color="yellow"><i>FINAL:<\/i><\/font>/);
+    assert.doesNotMatch(song.slides[9], coro);
+  });
+
+  it('does not duplicate a chorus the source already repeats', () => {
+    const song = formatLouvandoPraise({
+      title: 'JÁ REPETIDO',
+      collection: { name: 'Avulsos' },
+      lyrics:
+        '<p>Verso um</p>' +
+        '<p>&nbsp;</p>' +
+        '<p><strong>Coro</strong></p>' +
+        '<p>Linha do coro</p>' +
+        '<p>&nbsp;</p>' +
+        '<p>Verso dois</p>' +
+        '<p>&nbsp;</p>' +
+        '<p><strong>Coro</strong></p>' +
+        '<p>Linha do coro</p>',
+    });
+    assert.equal(song.slides.length, 4);
+    assert.equal(song.slides[0], 'Verso um');
+    assert.match(song.slides[1], /CORO/);
+    assert.match(song.slides[1], /Linha do coro/);
+    assert.equal(song.slides[2], 'Verso dois');
+    assert.equal(song.slides[3], song.slides[1]);
   });
 });
 
