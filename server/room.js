@@ -109,8 +109,8 @@ class Room {
       (c) => c.role === 'controller' || c.role === 'admin'
     );
     const hasContent = !!(this.state.slidesHtml && String(this.state.slidesHtml).trim());
-    // QR só se não há controlador e a sala está “vazia” (sem projeção ativa).
-    // Se o celular cair no meio do culto, mantém a tela (logo/padrão no close).
+    // QR só sem controlador e sem projeção. Queda do celular não troca o slide,
+    // o vídeo nem a tela preta — o que está no telão permanece.
     this.state.pairingVisible = !hasController && !hasContent;
     return {
       client,

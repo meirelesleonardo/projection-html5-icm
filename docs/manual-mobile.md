@@ -44,7 +44,7 @@ Se a página já abriu via QR na mesma origem, a conexão é automática.
 
 Só um dispositivo **controla** a View por vez (celular ou desktop). Se o desktop estiver no comando, use **Assumir comando** no mobile (e vice-versa).
 
-Se o celular **bloquear** ou sair do navegador no meio do culto, o projetor **não volta ao QR**: vai para a **tela logo / padrão**. O QR só aparece no início (sala vazia) ou quando você toca **QR no projetor**.
+Se o celular **bloquear** ou o navegador for para segundo plano no meio do culto, a projeção **permanece** (slide, vídeo ou tela preta). O projetor não volta sozinho para o logo nem para o QR. O QR só aparece no início (sala vazia) ou quando você toca **QR no projetor**. O logo só entra pelo botão **Logo / padrão**.
 
 Os módulos no topo mostram **vários de uma vez**; deslize a faixa se não couberem todos (Bíblia, Slides, Mídia, Mais…).
 
