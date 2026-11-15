@@ -11,7 +11,8 @@ const {
   suggestLibraryNameFromFile,
   parseSongIdentity,
 } = require('./numbering');
-const { findFolderByName, buildMergePlan, applyMergePlan } = require('./merge-engine');
+const { findFolderByName, buildMergePlan, applyMergePlan, indexFolderSongs } = require('./merge-engine');
+const { dialectToContent } = require('../../tools/louvor-import/lib/lyric-markup');
 const { validateLibrary } = require('../library-validate');
 const { normalizeManualPaste } = require('../../tools/louvor-import/lib/manual-paste');
 
@@ -607,6 +608,155 @@ function createImportService(deps) {
   }
 
   /**
+   * Save editor dialect into an existing song, or into a named folder.
+   * A matching title in that folder is updated instead of rejected.
+   */
+  function saveEditedSong(opts = {}) {
+    const title = String(opts.title || '').trim();
+    const content = dialectToContent(opts.text);
+    if (!title) {
+      const err = new Error('título obrigatório');
+      err.status = 400;
+      err.code = 'EMPTY';
+      throw err;
+    }
+    if (!content.trim()) {
+      const err = new Error('letra vazia');
+      err.status = 400;
+      err.code = 'EMPTY_BODY';
+      throw err;
+    }
+    const songCheck = validateOfficialSong({ title, content });
+    if (!songCheck.ok) {
+      const err = new Error(songCheck.errors.join('; '));
+      err.status = 400;
+      err.code = 'VALIDATION';
+      throw err;
+    }
+
+    const loaded = loadLibrarySafe();
+    const lib = JSON.parse(JSON.stringify(loaded.library || []));
+    let status = 'UPDATE';
+    let libraryName = '';
+    let folderIndex = null;
+    let songIndex = null;
+
+    const hasIndex = opts.folderIndex != null && opts.folderIndex !== '' && opts.songIndex != null && opts.songIndex !== '';
+    if (hasIndex) {
+      folderIndex = Number(opts.folderIndex);
+      songIndex = Number(opts.songIndex);
+      if (!Number.isInteger(folderIndex) || folderIndex < 0 || folderIndex >= lib.length) {
+        const err = new Error('pasta não encontrada');
+        err.status = 404;
+        err.code = 'NOT_FOUND';
+        throw err;
+      }
+      const folder = lib[folderIndex];
+      if (!folder.songs || !Number.isInteger(songIndex) || songIndex < 0 || songIndex >= folder.songs.length) {
+        const err = new Error('louvor não encontrado');
+        err.status = 404;
+        err.code = 'NOT_FOUND';
+        throw err;
+      }
+      libraryName = folder.name;
+      const song = folder.songs[songIndex];
+      if (song.title === title && song.content === content) {
+        return {
+          ok: true,
+          title,
+          content,
+          status: 'UNCHANGED',
+          libraryName,
+          folderIndex,
+          songIndex,
+          version: loaded.version,
+          updatedAt: loaded.updatedAt,
+        };
+      }
+      song.title = title;
+      song.content = content;
+    } else {
+      libraryName = String(opts.libraryName || '').trim();
+      if (!libraryName) {
+        const err = new Error('pasta de destino obrigatória');
+        err.status = 400;
+        err.code = 'EMPTY';
+        throw err;
+      }
+      const matches = findFolderByName(lib, libraryName);
+      if (matches.length > 1 && !matches.some((m) => m.folder.name === libraryName)) {
+        const err = new Error(`várias pastas similares a "${libraryName}"; use o nome exato`);
+        err.status = 409;
+        err.code = 'AMBIGUOUS_FOLDER';
+        throw err;
+      }
+      if (!matches.length) {
+        lib.unshift({ name: libraryName, type: 's', lang: opts.lang || 'pt', songs: [] });
+        folderIndex = 0;
+      } else {
+        const exact = matches.find((m) => m.folder.name === libraryName) || matches[0];
+        folderIndex = exact.index;
+      }
+      const folder = lib[folderIndex];
+      const id = parseSongIdentity(title);
+      const nn = normalizeName(id.titleRaw || title);
+      const hits = nn ? indexFolderSongs(folder).byName.get(nn) || [] : [];
+      if (hits.length > 1) {
+        const err = new Error('há mais de um louvor com esse nome nesta pasta');
+        err.status = 409;
+        err.code = 'AMBIGUOUS';
+        throw err;
+      }
+      if (hits.length === 1) {
+        songIndex = hits[0].index;
+        const song = folder.songs[songIndex];
+        if (song.title === title && song.content === content) {
+          return {
+            ok: true,
+            title,
+            content,
+            status: 'UNCHANGED',
+            libraryName: folder.name,
+            folderIndex,
+            songIndex,
+            version: loaded.version,
+            updatedAt: loaded.updatedAt,
+          };
+        }
+        song.title = title;
+        song.content = content;
+        status = 'UPDATE';
+      } else {
+        folder.songs.push({ title, content });
+        songIndex = folder.songs.length - 1;
+        status = 'NEW';
+      }
+      libraryName = folder.name;
+    }
+
+    const check = validateLibrary(lib);
+    if (!check.ok) {
+      const err = new Error(check.error);
+      err.status = 400;
+      err.code = 'VALIDATION';
+      throw err;
+    }
+    const expectedVersion = opts.expectedVersion != null ? opts.expectedVersion : loaded.version;
+    const result = libraryStore.saveAtomic(lib, expectedVersion);
+    return {
+      ok: true,
+      title,
+      content,
+      status,
+      libraryName,
+      folderIndex,
+      songIndex,
+      version: result.version,
+      updatedAt: result.updatedAt,
+    };
+  }
+
+  /**
    * Save an already formatted song (Louvando). Does not assign iN.
    */
   function importFormattedSong(opts = {}) {
@@ -641,6 +791,7 @@ function createImportService(deps) {
     restoreBackup,
     importManualText,
     importFormattedSong,
+    saveEditedSong,
     detectTypeFromName,
     suggestLibraryNameFromFile,
     parseSongIdentity,

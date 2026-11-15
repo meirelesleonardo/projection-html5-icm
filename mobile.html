@@ -34,6 +34,23 @@
 
   <section id="screen-app" class="screen">
     <div class="status" id="appStatus">…</div>
+    <div id="songEditor" class="card hidden">
+      <h2>Editar louvor</h2>
+      <p class="status">
+        Linha em branco = nova tela. <code>CORO</code>, <code>FINAL</code>,
+        <code>INSTRUMENTOS</code>, <code>(2X)</code> e <code>(3X)</code> ficam em amarelo.
+        <code>(texto)</code> também. Várias linhas entre chaves repetem:
+        <code>{linhas}2x</code>, <code>{linhas}3x</code>, <code>{linhas}bis</code>.
+      </p>
+      <label for="songEditorTitle">Título</label>
+      <input id="songEditorTitle" autocomplete="off">
+      <label for="songEditorText">Letra</label>
+      <textarea id="songEditorText" rows="16"></textarea>
+      <button type="button" id="btnSongEditorSave">Salvar na biblioteca</button>
+      <button type="button" class="secondary" id="btnSongEditorCancel">Cancelar</button>
+      <p class="status" id="songEditorStatus"></p>
+    </div>
+
     <div class="nav-tabs nav-carousel">
       <button type="button" data-tab="live" class="active">Ao vivo</button>
       <button type="button" data-tab="playlist">Lista</button>
@@ -101,6 +118,7 @@
           <p class="status" id="louvandoPreviewMeta"></p>
           <div id="louvandoSlides"></div>
           <button type="button" id="btnLouvandoImport">Importar para biblioteca</button>
+          <button type="button" class="secondary" id="btnLouvandoEdit">Editar</button>
           <button type="button" class="secondary" id="btnLouvandoAddList" disabled>Adicionar à lista</button>
           <p class="status" id="louvandoImportStatus"></p>
         </div>

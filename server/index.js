@@ -78,6 +78,7 @@ const { createImportService } = require('./import/import-service');
 const importRepo = createImportRepository({ rootDir: ROOT });
 const importService = createImportService({ importRepo, libraryStore });
 const { createLouvandoClient } = require('./sources/louvando');
+const { htmlToDialect } = require('../tools/louvor-import/lib/lyric-markup');
 const louvandoClient = createLouvandoClient();
 
 const IMPORT_EXTS = /\.(pptx|ppt|pdf|docx|txt)$/i;
@@ -514,6 +515,47 @@ app.post('/api/sources/louvando/import', (req, res) => {
         version: e.currentVersion,
       });
     });
+});
+
+app.post('/api/library/songs/dialect', (req, res) => {
+  if (!requireLibraryPin(req, res)) return;
+  const content = req.body && req.body.content;
+  return res.json({ ok: true, text: htmlToDialect(content) });
+});
+
+app.post('/api/library/songs/save', (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || '?';
+  if (!rateLimitLibraryWrite(ip)) {
+    return res.status(429).json({ error: 'muitas gravações; aguarde um minuto', code: 'rate_limit' });
+  }
+  if (!requireLibraryPin(req, res)) return;
+  try {
+    const body = req.body || {};
+    const result = importService.saveEditedSong({
+      title: body.title,
+      text: body.text,
+      folderIndex: body.folderIndex,
+      songIndex: body.songIndex,
+      libraryName: body.libraryName,
+      lang: body.lang || 'pt',
+      expectedVersion: body.version,
+    });
+    setLibraryHeaders(res, {
+      version: result.version,
+      updatedAt: result.updatedAt,
+      etag: String(result.version),
+    });
+    if (result.status !== 'UNCHANGED') publishLibrary(result, 'local');
+    return res.status(200).json(result);
+  } catch (e) {
+    const status = e.status || (e.code === 'CONFLICT' ? 409 : 500);
+    console.warn(`[library] song save failed ip=${ip}: ${e.message}`);
+    return res.status(status).json({
+      error: e.message,
+      code: e.code || 'save_error',
+      version: e.currentVersion,
+    });
+  }
 });
 
 app.post('/api/library/import-manual', (req, res) => {

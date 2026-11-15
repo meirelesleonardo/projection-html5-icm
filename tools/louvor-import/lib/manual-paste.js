@@ -11,6 +11,7 @@
  */
 
 const { formatYellowLabel, classifyLabel, extractTrailingCue } = require('./markers');
+const { formatLyricLine } = require('./lyric-markup');
 const { parseTitleNumber } = require('./ir');
 
 const IMPORT_TITLE_RE = /^i(\d+)\s*[-–—]\s*(.+)$/i;
@@ -81,7 +82,7 @@ function makeChorusSlide(headerLine, bodyLines) {
   const parts = [formatYellowLabel(header.label)];
   for (const line of bodyLines) {
     if (isChorusHeader(line)) continue;
-    parts.push(line);
+    parts.push(formatLyricLine(line));
   }
   return parts.join('\n');
 }
@@ -113,10 +114,10 @@ function makeMarkerSlide(lines) {
     } else {
       const trail = extractTrailingCue(line);
       if (trail) {
-        if (trail.text) out.push(trail.text);
+        if (trail.text) out.push(formatLyricLine(trail.text));
         out.push(formatYellowLabel(trail.display));
       } else {
-        out.push(line);
+        out.push(formatLyricLine(line));
       }
     }
   }
@@ -140,11 +141,11 @@ function renderCueLines(lines) {
     }
     const trail = extractTrailingCue(line);
     if (trail) {
-      if (trail.text) out.push(trail.text);
+      if (trail.text) out.push(formatLyricLine(trail.text));
       out.push(formatYellowLabel(trail.display));
       continue;
     }
-    out.push(line);
+    out.push(formatLyricLine(line));
   }
   return out.join('\n');
 }

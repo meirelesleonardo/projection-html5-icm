@@ -232,6 +232,7 @@ function escapeHtml(s) {
  * Build official content string from presentation slides (IR).
  */
 function slidesToContent(slides) {
+  const { formatLyricLine } = require('./lyric-markup');
   const blocks = [];
   for (const slide of slides || []) {
     const out = [];
@@ -264,7 +265,7 @@ function slidesToContent(slides) {
           out.push(formatYellowLabel(`(${line.repeat.n}X)`));
         continue;
       }
-      out.push(String(line));
+      out.push(formatLyricLine(String(line)));
     }
     if (out.length) blocks.push(out.join('\n'));
   }

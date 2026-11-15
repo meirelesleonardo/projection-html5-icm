@@ -13,19 +13,13 @@
 const { detectCommand } = require('./manual-paste');
 
 const { classifyLabel, formatYellowLabel, extractTrailingCue } = require('./markers');
+const { formatLyricLine } = require('./lyric-markup');
 
 const PREFER_LINES = 6;
 const HARD_MAX_LINES = 9;
 const MIN_CHUNK = 3;
 
 const CIA_KEY = 'criancas, intermediarios e adolescentes';
-
-function escapeHtml(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
 
 function decodeEntities(s) {
   return String(s || '')
@@ -233,7 +227,7 @@ function emitLine(line) {
   if (line && typeof line === 'object' && line.yellow) {
     return formatYellowLabel(line.yellow);
   }
-  return escapeHtml(line);
+  return formatLyricLine(line);
 }
 
 function isChorusLabel(label) {

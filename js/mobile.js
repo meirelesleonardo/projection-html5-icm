@@ -31,6 +31,9 @@
   var louvandoQuery = '';
   var louvandoLastPage = 0;
   var louvandoSelectedId = null;
+  var louvandoPreviewBody = null;
+  var songEditorTarget = null;
+  var songEditorReturnTab = 'library';
   var controlWaiters = [];
   var BG_DEFAULT = 'imagens/fundo.jpg';
   var LOGO_SLIDE_HTML = null;
@@ -68,6 +71,8 @@
       var el = $('tab-' + t);
       if (el) el.classList.toggle('hidden', t !== name);
     });
+    var editor = $('songEditor');
+    if (editor) editor.classList.add('hidden');
     if (activeBtn && typeof activeBtn.scrollIntoView === 'function') {
       try {
         activeBtn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
@@ -874,21 +879,23 @@
 
   function flattenLibrary(data) {
     var out = [];
-    function walk(node, folder) {
+    function walk(node, folder, folderIndex) {
       if (!node) return;
       if (Array.isArray(node)) {
-        node.forEach(function (n) {
-          walk(n, folder);
+        node.forEach(function (n, i) {
+          walk(n, folder, i);
         });
         return;
       }
       if (node.songs && Array.isArray(node.songs)) {
         var folderName = node.name || node.text || folder || '';
-        node.songs.forEach(function (song) {
+        node.songs.forEach(function (song, songIndex) {
           out.push({
             name: song.title || song.name || song.text,
             content: song.content || '',
             folder: folderName,
+            folderIndex: folderIndex,
+            songIndex: songIndex,
             lang: node.lang || song.lang,
           });
         });
@@ -945,6 +952,26 @@
           setStatus($('appStatus'), 'Adicionado à lista: ' + (s.name || 'louvor'), 'ok');
           schedulePersist();
         });
+        if (typeof s.folderIndex === 'number' && typeof s.songIndex === 'number') {
+          var actions = document.createElement('div');
+          actions.className = 'song-edit-row';
+          var edit = document.createElement('button');
+          edit.type = 'button';
+          edit.className = 'secondary';
+          edit.textContent = 'Editar';
+          edit.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            openSongEditor({
+              title: s.name,
+              content: s.content,
+              folderIndex: s.folderIndex,
+              songIndex: s.songIndex,
+              returnTab: 'library',
+            });
+          });
+          actions.appendChild(edit);
+          div.appendChild(actions);
+        }
         box.appendChild(div);
       });
   }
@@ -1067,6 +1094,127 @@
       });
   }
 
+  function openSongEditor(opts) {
+    if (!baseUrl) {
+      setStatus($('appStatus'), 'Desconectado do servidor', 'bad');
+      return;
+    }
+    songEditorTarget = opts || {};
+    songEditorReturnTab = (opts && opts.returnTab) || 'library';
+    var titleInput = $('songEditorTitle');
+    var textInput = $('songEditorText');
+    var st = $('songEditorStatus');
+    if (titleInput) titleInput.value = (opts && opts.title) || '';
+    if (textInput) textInput.value = '';
+    if (st) setStatus(st, 'Abrindo…', '');
+    document.querySelectorAll('.tab-panel').forEach(function (el) {
+      el.classList.add('hidden');
+    });
+    var editor = $('songEditor');
+    if (editor) {
+      editor.classList.remove('hidden');
+      try {
+        editor.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      } catch (e) {
+        editor.scrollIntoView(true);
+      }
+    }
+    fetch(baseUrl + '/api/library/songs/dialect', {
+      method: 'POST',
+      headers: libraryPinHeaders(true),
+      body: JSON.stringify({ content: (opts && opts.content) || '' }),
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          return { ok: r.ok, body: j || {} };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          if (st) setStatus(st, (res.body && res.body.error) || 'Falha ao abrir o editor', 'bad');
+          return;
+        }
+        if (textInput) textInput.value = res.body.text || '';
+        if (st) setStatus(st, '', '');
+      })
+      .catch(function () {
+        if (st) setStatus(st, 'Falha de rede ao abrir o editor', 'bad');
+      });
+  }
+
+  function closeSongEditor() {
+    var editor = $('songEditor');
+    if (editor) editor.classList.add('hidden');
+    songEditorTarget = null;
+    showTab(songEditorReturnTab || 'library');
+  }
+
+  function saveSongEditor() {
+    var st = $('songEditorStatus');
+    var target = songEditorTarget;
+    if (!target) return;
+    if (state.role === 'observer') {
+      if (st) setStatus(st, 'Modo observador — não pode gravar', 'bad');
+      return;
+    }
+    if (!baseUrl) {
+      if (st) setStatus(st, 'Desconectado do servidor', 'bad');
+      return;
+    }
+    var title = $('songEditorTitle') ? $('songEditorTitle').value : '';
+    var text = $('songEditorText') ? $('songEditorText').value : '';
+    if (!String(title || '').trim()) {
+      if (st) setStatus(st, 'Informe o título', 'bad');
+      return;
+    }
+    if (st) setStatus(st, 'Salvando…', '');
+    var body = {
+      title: title,
+      text: text,
+      version: state.libraryVersion != null ? state.libraryVersion : undefined,
+    };
+    if (typeof target.folderIndex === 'number' && typeof target.songIndex === 'number') {
+      body.folderIndex = target.folderIndex;
+      body.songIndex = target.songIndex;
+    } else if (target.libraryName) {
+      body.libraryName = target.libraryName;
+    }
+    fetch(baseUrl + '/api/library/songs/save', {
+      method: 'POST',
+      headers: libraryPinHeaders(true),
+      body: JSON.stringify(body),
+    })
+      .then(function (r) {
+        var ver = r.headers.get('X-Library-Version');
+        return r.json().then(function (j) {
+          return {
+            ok: r.ok,
+            status: r.status,
+            body: j || {},
+            version: ver != null ? Number(ver) : j && j.version,
+          };
+        });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          var msg = (res.body && res.body.error) || 'Falha ao salvar';
+          if (res.status === 403) msg = 'PIN incorreto — confira o PIN na tela Conectar';
+          if (st) setStatus(st, msg, 'bad');
+          return;
+        }
+        if (res.version != null) state.libraryVersion = res.version;
+        loadLibrary();
+        var okMsg =
+          (res.body.status === 'UNCHANGED' ? 'Sem alterações: ' : 'Salvo: ') +
+          (res.body.title || title);
+        setStatus($('appStatus'), okMsg, 'ok');
+        closeSongEditor();
+      })
+      .catch(function () {
+        if (st) setStatus(st, 'Falha de rede ao salvar', 'bad');
+      });
+  }
+
   function addLastManualToPlaylist() {
     if (!lastManualImport) return;
     var song = lastManualImport.song || {
@@ -1174,6 +1322,7 @@
   }
 
   function showLouvandoPreview(body) {
+    louvandoPreviewBody = body || null;
     var preview = $('louvandoPreview');
     var meta = $('louvandoPreviewMeta');
     var slidesBox = $('louvandoSlides');
@@ -1217,6 +1366,7 @@
       louvandoPage = 1;
       louvandoSelectedId = null;
       lastLouvandoImport = null;
+      louvandoPreviewBody = null;
       setLouvandoAddEnabled(false);
       var preview = $('louvandoPreview');
       if (preview) preview.classList.add('hidden');
@@ -2443,6 +2593,31 @@
   if ($('btnLouvandoAddList')) {
     $('btnLouvandoAddList').addEventListener('click', function () {
       addLastLouvandoToPlaylist();
+    });
+  }
+  if ($('btnLouvandoEdit')) {
+    $('btnLouvandoEdit').addEventListener('click', function () {
+      var body = louvandoPreviewBody;
+      if (!body || !body.content) {
+        setStatus($('louvandoImportStatus'), 'Abra um louvor antes de editar', 'bad');
+        return;
+      }
+      openSongEditor({
+        title: body.title || '',
+        content: body.content || '',
+        libraryName: body.libraryName || '',
+        returnTab: 'import',
+      });
+    });
+  }
+  if ($('btnSongEditorSave')) {
+    $('btnSongEditorSave').addEventListener('click', function () {
+      saveSongEditor();
+    });
+  }
+  if ($('btnSongEditorCancel')) {
+    $('btnSongEditorCancel').addEventListener('click', function () {
+      closeSongEditor();
     });
   }
   if ($('mediaSearch')) {

@@ -125,4 +125,38 @@ describe('importManualText', () => {
       (err) => err.code === 'UNRESOLVED' || err.status === 409
     );
   });
+
+  it('updates a song in place from editor text', () => {
+    const loaded = libraryStore.load();
+    const folder = loaded.library.find((f) => f.name === 'Louvando CIA');
+    const folderIndex = loaded.library.indexOf(folder);
+    const res = importService.saveEditedSong({
+      title: 'CONHEÇAMOS E PROSSIGAMOS (E)',
+      text: 'linha (suave)\n\n{bbbbb\ncccc}2x',
+      folderIndex,
+      songIndex: 0,
+      expectedVersion: loaded.version,
+    });
+    assert.equal(res.status, 'UPDATE');
+    assert.match(res.content, /<font color="yellow"><i>\(suave\)<\/i><\/font>/);
+    assert.match(res.content, /<blockquote class="chave-2x">bbbbb\ncccc<\/blockquote>/);
+    const after = libraryStore.load();
+    assert.equal(after.library[folderIndex].songs[0].content, res.content);
+  });
+
+  it('updates an existing title in the destination folder', () => {
+    const loaded = libraryStore.load();
+    const res = importService.saveEditedSong({
+      title: 'CONHEÇAMOS E PROSSIGAMOS (E)',
+      text: 'CORO\nverso novo',
+      libraryName: 'Louvando CIA',
+      expectedVersion: loaded.version,
+    });
+    assert.equal(res.status, 'UPDATE');
+    assert.match(res.content, /CORO/);
+    assert.doesNotMatch(res.content, /suave/);
+    const after = libraryStore.load();
+    const folder = after.library.find((f) => f.name === 'Louvando CIA');
+    assert.equal(folder.songs.length, 1);
+  });
 });

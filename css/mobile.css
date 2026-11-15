@@ -127,6 +127,8 @@ button:disabled { opacity: 0.45; }
   margin-top: 0.5rem;
 }
 .list-item-actions button { margin-top: 0; min-height: 44px; }
+.song-edit-row { margin-top: 0.45rem; }
+.song-edit-row button { margin-top: 0; }
 
 .slide-list,
 #libraryBox,
