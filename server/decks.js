@@ -2,11 +2,15 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawn } = require('child_process');
 const { randomUUID } = require('crypto');
+const { pathToFileURL } = require('url');
 const { findSoffice, findPdftoppm } = require('./which-tool');
+const { normalizeOfficePackage } = require('./zip-normalize');
 
 const DECK_EXTS = /\.(pptx|ppt|odp|pdf)$/i;
+const ZIP_OFFICE_EXTS = new Set(['.pptx', '.pptm', '.ppsx', '.odp']);
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -79,6 +83,31 @@ async function checkTools() {
   return { soffice, pdftoppm };
 }
 
+function explainConvertError(err) {
+  const msg = String((err && err.message) || '');
+  if (/source file could not be loaded/i.test(msg)) {
+    const friendly = new Error(
+      'O LibreOffice não conseguiu abrir este arquivo. Feche-o se estiver aberto no Impress ou no PowerPoint, ou exporte como PDF e envie o PDF.'
+    );
+    friendly.code = 'LOAD_FAILED';
+    return friendly;
+  }
+  return err;
+}
+
+function prepareOfficeInput(outDir, ext, uploadedPath) {
+  if (!ZIP_OFFICE_EXTS.has(ext)) return uploadedPath;
+  const dest = path.join(outDir, `input${ext}`);
+  try {
+    normalizeOfficePackage(uploadedPath, dest);
+    return dest;
+  } catch (err) {
+    if (err && err.code === 'ENCRYPTED_PACKAGE') throw err;
+    fs.copyFileSync(uploadedPath, dest);
+    return dest;
+  }
+}
+
 function missingToolMessage(tool) {
   if (tool === 'pdftoppm' && process.platform === 'win32') {
     return 'pdftoppm não encontrado. Instale o Poppler e coloque pdftoppm.exe no PATH.';
@@ -125,12 +154,41 @@ async function convertUploadedDeck(decksDir, uploadedPath, originalName) {
         err.code = 'MISSING_TOOLS';
         throw err;
       }
-      // LibreOffice writes <stem>.pdf into outDir
-      await run(
-        tools.soffice,
-        ['--headless', '--norestore', '--convert-to', 'pdf', '--outdir', outDir, uploadedPath],
-        { timeoutMs: 240000 }
-      );
+      // LibreOffice writes <stem>.pdf into outDir.
+      // A private profile avoids the running Impress instance, which answers
+      // --convert-to with "source file could not be loaded".
+      // PPTX from PowerPoint often uses ZIP data descriptors; those are
+      // rewritten before soffice sees the file.
+      const inputPath = prepareOfficeInput(outDir, ext, uploadedPath);
+      const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'icm-lo-'));
+      try {
+        await run(
+          tools.soffice,
+          [
+            '--headless',
+            '--norestore',
+            '--nolockcheck',
+            '--nologo',
+            '--nofirststartwizard',
+            `-env:UserInstallation=${pathToFileURL(profileDir).href}`,
+            '--convert-to',
+            'pdf',
+            '--outdir',
+            outDir,
+            inputPath,
+          ],
+          { timeoutMs: 240000 }
+        );
+      } catch (err) {
+        throw explainConvertError(err);
+      } finally {
+        try {
+          fs.rmSync(profileDir, { recursive: true, force: true });
+        } catch (_) {}
+        try {
+          if (inputPath !== uploadedPath && fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+        } catch (_) {}
+      }
       const pdfs = fs.readdirSync(outDir).filter((f) => f.toLowerCase().endsWith('.pdf'));
       if (!pdfs.length) {
         throw new Error('Conversão para PDF falhou (nenhum PDF gerado)');

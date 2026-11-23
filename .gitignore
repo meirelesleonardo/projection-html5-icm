@@ -16,3 +16,4 @@ tools/windows-pack/.cache/
 *.log
 .env
 *.pptx
+media
