@@ -916,6 +916,91 @@
     return out;
   }
 
+  function songListTitle(song, fallback) {
+    return String((song && (song.name || song.title)) || fallback || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function playlistHasSong(title) {
+    var key = songListTitle({ title: title }).toLowerCase();
+    if (!key) return false;
+    return (state.playlist || []).some(function (item) {
+      if (!item || item.type !== 'song') return false;
+      var itemTitle = songListTitle(item.song, item.title);
+      return itemTitle.toLowerCase() === key;
+    });
+  }
+
+  var songAddLocks = {};
+
+  function songAddLockKey(song) {
+    return [
+      (song && song.folder) || '',
+      song && song.folderIndex != null ? song.folderIndex : '',
+      song && song.songIndex != null ? song.songIndex : '',
+      (song && song.name) || '',
+    ].join('|');
+  }
+
+  function songAddRemaining(song) {
+    var key = songAddLockKey(song);
+    var until = songAddLocks[key];
+    if (!until) return 0;
+    var left = until - Date.now();
+    if (left <= 0) {
+      delete songAddLocks[key];
+      return 0;
+    }
+    return left;
+  }
+
+  function paintSongAddButton(btn, song) {
+    var left = songAddRemaining(song);
+    if (left <= 0) {
+      btn.disabled = false;
+      delete btn.dataset.adding;
+      btn.classList.remove('song-add-locked');
+      btn.textContent = 'Adicionar à lista';
+      return;
+    }
+    btn.disabled = true;
+    btn.classList.add('song-add-locked');
+    btn.textContent = 'Adicionado';
+    setTimeout(function () {
+      if (!btn.isConnected) return;
+      paintSongAddButton(btn, song);
+    }, left);
+  }
+
+  function lockSongAddButton(btn, song) {
+    songAddLocks[songAddLockKey(song)] = Date.now() + 5000;
+    paintSongAddButton(btn, song);
+  }
+
+  function addSongToPlaylist(song, title) {
+    var name = songListTitle(song, title) || 'louvor';
+    if (playlistHasSong(name)) {
+      var again = confirm(
+        '"' +
+          name +
+          '" já está na lista de projeção.\n\nDeseja adicionar mesmo assim?'
+      );
+      if (!again) return false;
+    }
+    state.playlist.push({
+      type: 'song',
+      title: name,
+      song: song,
+      html: songToHtml(song),
+    });
+    syncPlaylist();
+    renderPlaylist();
+    setStatus($('appStatus'), 'Adicionado à lista: ' + name, 'ok');
+    schedulePersist();
+    return true;
+  }
+
   function renderLibrary(filter) {
     var box = $('libraryBox');
     box.innerHTML = '';
@@ -943,18 +1028,30 @@
           '</strong><br><small>' +
           escapeHtml(s.folder) +
           '</small>';
-        div.addEventListener('click', function () {
-          var html = songToHtml(s);
-          var item = { type: 'song', title: s.name, song: s, html: html };
-          state.playlist.push(item);
-          syncPlaylist();
-          renderPlaylist();
-          setStatus($('appStatus'), 'Adicionado à lista: ' + (s.name || 'louvor'), 'ok');
-          schedulePersist();
+        var actions = document.createElement('div');
+        actions.className = 'song-edit-row';
+        var add = document.createElement('button');
+        add.type = 'button';
+        add.textContent = 'Adicionar à lista';
+        paintSongAddButton(add, s);
+        add.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          if (add.dataset.adding === '1' || songAddRemaining(s) > 0) return;
+          add.dataset.adding = '1';
+          add.disabled = true;
+          var added = false;
+          try {
+            added = !!addSongToPlaylist(s, s.name);
+          } finally {
+            if (added) lockSongAddButton(add, s);
+            else {
+              delete add.dataset.adding;
+              add.disabled = false;
+            }
+          }
         });
+        actions.appendChild(add);
         if (typeof s.folderIndex === 'number' && typeof s.songIndex === 'number') {
-          var actions = document.createElement('div');
-          actions.className = 'song-edit-row';
           var edit = document.createElement('button');
           edit.type = 'button';
           edit.className = 'secondary';
@@ -970,8 +1067,8 @@
             });
           });
           actions.appendChild(edit);
-          div.appendChild(actions);
         }
+        div.appendChild(actions);
         box.appendChild(div);
       });
   }
@@ -1222,17 +1319,7 @@
       title: lastManualImport.title,
       content: lastManualImport.content || '',
     };
-    var html = songToHtml(song);
-    state.playlist.push({
-      type: 'song',
-      title: lastManualImport.title,
-      song: song,
-      html: html,
-    });
-    syncPlaylist();
-    renderPlaylist();
-    setStatus($('appStatus'), 'Adicionado à lista: ' + lastManualImport.title, 'ok');
-    schedulePersist();
+    addSongToPlaylist(song, lastManualImport.title);
   }
 
   function setLouvandoAddEnabled(on) {
@@ -1490,16 +1577,7 @@
       title: lastLouvandoImport.title,
       content: lastLouvandoImport.content || '',
     };
-    state.playlist.push({
-      type: 'song',
-      title: lastLouvandoImport.title,
-      song: song,
-      html: songToHtml(song),
-    });
-    syncPlaylist();
-    renderPlaylist();
-    setStatus($('appStatus'), 'Adicionado à lista: ' + lastLouvandoImport.title, 'ok');
-    schedulePersist();
+    addSongToPlaylist(song, lastLouvandoImport.title);
   }
 
   function updateBgStatus() {

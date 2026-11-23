@@ -127,8 +127,20 @@ button:disabled { opacity: 0.45; }
   margin-top: 0.5rem;
 }
 .list-item-actions button { margin-top: 0; min-height: 44px; }
-.song-edit-row { margin-top: 0.45rem; }
-.song-edit-row button { margin-top: 0; }
+.song-edit-row {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+.song-edit-row button { flex: 1; margin-top: 0; min-height: 44px; }
+button.song-add-locked,
+button.song-add-locked:disabled {
+  opacity: 1;
+  background: #243528;
+  color: var(--ok);
+  cursor: default;
+  pointer-events: none;
+}
 
 .slide-list,
 #libraryBox,
